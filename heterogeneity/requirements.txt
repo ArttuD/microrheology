@@ -1,0 +1,5 @@
+arviz
+tqdm
+seaborn
+pandas
+jupyter

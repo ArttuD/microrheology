@@ -1,0 +1,9 @@
+matplotlib
+seaborn
+opencv-python
+tqdm
+glob
+scipy
+sklearn
+pandas
+argparse
