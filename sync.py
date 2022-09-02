@@ -1,16 +1,6 @@
 # %%
 # %%
-import numpy as np
-import matplotlib.pyplot as plt
-import json
-from glob import glob
-import cv2
-from tqdm import tqdm
-import pandas as pd
 import argparse
-import os
-from glob import glob
-import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings("ignore")
 from tools.syncronizer import syncronizer

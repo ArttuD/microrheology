@@ -1,7 +1,5 @@
 # %%
 import json
-from PIL.Image import new
-import matplotlib
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 import cv2

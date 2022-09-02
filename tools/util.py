@@ -1,6 +1,3 @@
-import matplotlib.pyplot as plt
-
-
 def plot_probe(data,i,ind,sub,ax):
     if ind == 1:
         ax.plot(data)

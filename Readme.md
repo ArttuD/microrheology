@@ -48,7 +48,7 @@ pip install -r requirements.txt
 
 Our analysis pipeline is meant to analyze micromanipulation videos obtained via the measurement system introduced in X .The pipeline works as follows:
 
-1. Particles are first tracked with ```tracker.py```
+1. Particles are first tracked with ```track.py``` <br> Track all the files in the directory before moving to the next step.
 2. Videos and current outputs from the coils has to be syncronized with ```sync.py```
 3. Particles radius is estimated from separate sweep videos (manually changed focus over z) with ```radius.py```
 4. Observed displacement signals are transformed into mechanical properties, namely to $|G|$ and $\phi$ with ```plot.py```. It also visualizes the results.
@@ -88,7 +88,7 @@ Each folder contains the timelapse video of particle movements (```vid.mp4```) (
 Transform video into xy trajectories of particles.
 
 ```sh
-python tracker.py -p ".../exampleData/Agarose30um/22061401020201_A"
+python track.py -p ".../exampleData/Agarose30um/22061401020201_A"
 ```
 
 2. i. Left click and drag a box around magnetic particles (drag from top left to bottom right) and release the left buttom. <br> press "q" to close the window <br>

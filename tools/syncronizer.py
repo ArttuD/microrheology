@@ -2,7 +2,6 @@ from glob import glob
 import numpy as np
 from tqdm import tqdm
 import pandas as pd
-import argparse
 import os
 import matplotlib.pyplot as plt
 import json

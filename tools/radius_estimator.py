@@ -5,13 +5,10 @@ import cv2
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from tools.saver import Saver
-import time
-import datetime
 import argparse
 import os
 import json
 from scipy.ndimage import gaussian_filter1d
-from scipy.optimize import leastsq
 # %%
 
 
