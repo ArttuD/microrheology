@@ -1,0 +1,27 @@
+
+Micropulator prices:
+
+1) Apex PA51a, 132,87e
+https://www.mouser.fi/ProductDetail/Apex-Microtechnology/PA51A?qs=TiOZkKH1s2QzK7mqWUqcbg%3D%3D
+
+2) Encloser, 58.35e
+https://www.digikey.fi/en/products/detail/altech-corporation/150-008/8546839
+
+3) Apex Heat sink HS02, 33.54e
+https://www.mouser.fi/ProductDetail/Apex-Microtechnology/HS02?qs=TiOZkKH1s2SbdOUCpxXwgQ%3D%3D
+
+4) Amplifier Socket, 29.06e
+https://www.mouser.fi/ProductDetail/Texas-Instruments/0804MC?qs=RaXRGs7zCv4oMX3mJ%252Bg8Hg%3D%3D
+
+5) Coils Ø80/6-47mm, versio D (04-30840) 368e
+https://trafomic.fi/
+
+6) Vacoflux 50 Cobalt-Iron cores, received as free samples 
+
+https://vacuumschmelze.com/products/soft-magnetic-materials-and-stamped-parts/49-Cobalt-Iron---VACOFLUX-and-VACODUR
+
+7) Other components, 4 Resistors (< 1e), 1 power resistor (~1e), IC circuit (<1e), Banana plugs...
+
+-------------------------------------------------------------------------------------------------------------------
+
+
