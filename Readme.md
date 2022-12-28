@@ -67,7 +67,7 @@ Our analysis pipeline is meant to analyze micromanipulation videos obtained via 
 - 21081001010202_A
 ```
 
-<br> **(can be found from .../exampleData) <br>
+<br> Data can be found from: https://osf.io/jsxqh/ <br>
 
 Each folder contains the timelapse video of particle movements (```vid.mp4```) (for instance output from [https://www.baslerweb.com/en/products/other-basler-software/basler-video-recording-software/](https://www.baslerweb.com/en/products/other-basler-software/basler-video-recording-software/). ```sweep.m4``` is the static video over the z stack, which is used to estimate the radius. This file has to be only in the first repeat. ```current_trial_.txt``` is the current output file.
 
