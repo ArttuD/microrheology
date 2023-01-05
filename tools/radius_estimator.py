@@ -5,11 +5,86 @@ import cv2
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from tools.saver import Saver
+import time
+import datetime
 import argparse
 import os
 import json
 from scipy.ndimage import gaussian_filter1d
+from scipy.optimize import leastsq
+import sys
 # %%
+
+
+class ChangeFocus:
+    def __init__(self,imgs,rad_plots,focus_plots,focus_lines,rad_lines,img_plots,all_rads,out_path,rads):
+        
+        self.imgs = imgs
+        self.focus_plots = focus_plots
+        self.rad_plots = rad_plots
+        self.img_plots = img_plots
+        self.focus_lines = focus_lines
+        self.rad_lines = rad_lines
+        self.t = [0]*len(imgs)
+        self.all_rads = all_rads
+        self.changed = False
+        self.cid = self.focus_lines[0].figure.canvas.mpl_connect('button_press_event', self)
+        self.close = self.focus_lines[0].figure.canvas.mpl_connect('close_event', self.on_close)
+        self.out_path = out_path
+        self.rads = rads
+        self.map = {idx:i for idx,i in enumerate(rads.keys())}
+
+    @staticmethod
+    def find(axes,ax):
+        for idx,i in enumerate(axes):
+            if i == ax:
+                return idx
+        return 0
+
+    def load_img(self,idx,a_id):
+        img = self.imgs[a_id][idx]
+        self.img_plots[a_id].set_array(img)
+
+    def on_close(self,event):
+        self.focus_lines[0].figure.savefig('{}'.format(os.path.join(self.out_path,'radius_estimate.png')))
+
+    def get_rads(self):
+        return self.rads
+
+    def __call__(self, event):
+        x = event.xdata
+        y = event.ydata
+        if event.inaxes in self.focus_plots:
+            a_id = self.find(self.focus_plots,event.inaxes)
+            x_round = int(np.round(x))
+            self.focus_lines[a_id].set_data([x,x],[0,1])
+            self.load_img(x_round,a_id)
+            c = self.all_rads[a_id][x_round]
+            self.rad_lines[a_id].set_data([0,1],[c,c])
+            self.focus_lines[a_id].figure.canvas.draw()
+            self.t[a_id] = x_round
+            self.changed = True
+
+            self.rads[self.map[a_id]] = c
+
+        elif event.inaxes in self.rad_plots:
+            a_id = self.find(self.rad_plots,event.inaxes)
+            x_round = int(np.round(x))
+            c = self.all_rads[a_id][x_round]
+            self.rad_lines[a_id].set_data([0,1],[c,c])
+            self.load_img(x_round,a_id)
+            x_round = int(np.round(x))
+            self.focus_lines[a_id].set_data([x,x],[0,1])
+            self.focus_lines[a_id].figure.canvas.draw()
+            self.t[a_id] = x_round
+            self.changed = True
+
+            self.rads[self.map[a_id]] = c
+
+    def disconnect(self):
+        self.focus_lines[0].figure.canvas.mpl_disconnect(self.cid)
+        self.focus_lines[0].figure.canvas.mpl_disconnect(self.close)
+
 
 
 class RadiusEstimator():
@@ -66,6 +141,23 @@ class RadiusEstimator():
             cv2.imshow("drawer", clone)
 
 
+    def get_track_info(self,path):
+        coords = {}
+        track_path = os.path.join(path,'track_matched.json')
+        choose = 0
+        if os.path.exists(track_path):
+            with open(track_path,'r') as f:
+                track_info = json.load(f)
+            for i in track_info.keys():
+                if 'big' in i:
+                    x_ = track_info[i]['x'][0]
+                    y_ = track_info[i]['y'][0]
+                    shift = np.median(track_info[i]['radius'])+10
+                    #shift = 30
+                    coords[i] = {'y':x_-shift,'y2':x_+shift,'x':y_-shift,'x2':y_+shift}
+            choose = 1
+        return coords,choose
+
     def process_folder(self,args,paths):
         """Process data inside folder. Parser is dict of values"""
 
@@ -77,7 +169,7 @@ class RadiusEstimator():
         imgs = path
 
         # needed for the saver
-        json_name = '%s/track.json'%path
+        json_name = '%s/track_matched.json'%path
 
         out_path = path
         if out_path.endswith('.mp4'):
@@ -95,22 +187,27 @@ class RadiusEstimator():
         coords = {}
 
         choose = 0
-        # if using old track.json
+        # if using track_matched.json xy info
         if args['init']:
-            track_path = os.path.join(os.path.split(path)[0],'track_matched.json')
-            if not os.path.exists(track_path):
-                track_path = os.path.join(os.path.split(path)[0],'track.json')
-            if os.path.exists(track_path):
-                with open(track_path,'r') as f:
-                    track_info = json.load(f)
-                for i in track_info.keys():
-                    if 'big' in i:
-                        x_ = track_info[i]['x'][0]
-                        y_ = track_info[i]['y'][0]
-                        shift = np.median(track_info[i]['radius'])+10
-                        #shift = 30
-                        coords[i] = {'y':x_-shift,'y2':x_+shift,'x':y_-shift,'x2':y_+shift}
-                choose = 1
+            if not args['repeats']:
+                coords,choose = self.get_track_info(os.path.split(path)[0])
+            else:
+                # if we have repeats, find all probes. e.g repeat 2 might
+                # have probes which are not tracked in repeat 1...
+                # might cause problems if large drifts over repeats
+                cs = []
+                for i in paths:
+                    coords_,choose = self.get_track_info(i)
+                    cs.append(coords_)
+
+                # all from first repeat
+                coords = cs[0]
+                # add keys from the rest of the repeats
+                for i in range(1,len(cs)):
+                    a = list(cs[i-1].keys())
+                    b = list(filter(lambda x: x not in a,list(cs[i].keys())))
+                    for k in b:
+                        coords[k] = cs[i][k]
 
         #Create a window
         image = None
@@ -272,16 +369,18 @@ class RadiusEstimator():
 
         if len(saver.tracks.keys()) == 1:
             ax = np.expand_dims(ax,1)
-
+        rad_lines = []
+        focus_lines = []
         max_indices = []
         out_dict = {}
         rad_names = []
         rad_maxes = []
+        all_rads = []
         for idx,i in enumerate(saver.tracks.keys()):
             rad = np.array(saver.tracks[i]['radius'])
             rad = rad[rad.shape[0]//2:]
             laplace = np.array(saver.tracks[i]['laplace'])
-            laplace = gaussian_filter1d(laplace[laplace.shape[0]//2:],20)
+            laplace = gaussian_filter1d(laplace[laplace.shape[0]//2:],10)
             #np.save('G:/rad_{}.npy'.format(idx),rad)
             ax[0,idx].plot(rad)
             ax[1,idx].plot(laplace)
@@ -290,13 +389,19 @@ class RadiusEstimator():
             max_indices.append(lap_max)
             if lap_max >= len(rad):
                 lap_max = len(rad)-1
-            rad_max = rad[lap_max]
+            if len(rad) == 0:
+                print(f'No radius for: {i}. Quitting')
+                sys.exit(0)
+            else:
+                rad_max = rad[lap_max]
             rad_maxes.append(rad_max)
             rad_names.append(i)
             out_dict[i] = rad_max
-            
-            ax[0,idx].axhline(rad_max,color='red')
-            ax[1,idx].axvline(lap_max,color='red')
+            all_rads.append(rad)
+            l1 = ax[0,idx].axhline(rad_max,color='red')
+            l2 = ax[1,idx].axvline(lap_max,color='red')
+            rad_lines.append(l1)
+            focus_lines.append(l2)
 
 
         max_indices_sort = np.sort(max_indices)
@@ -305,6 +410,7 @@ class RadiusEstimator():
         cur_ind = 0
         ind = ind_sorted[cur_ind]
         cap = cv2.VideoCapture(imgs)
+        img_plots = [None]*len(list(saver.tracks.keys()))
         while cap.isOpened():
             #Download image, save the shape, and define color
             frame_exists, img = cap.read()
@@ -320,7 +426,7 @@ class RadiusEstimator():
                 x_end = min(int(x+rad_val*2),img.shape[0])
                 y_end = min(int(y+rad_val*2),img.shape[1])
                 sub_img = img[x:x_end,y:y_end,:]
-                ax[2,ind].imshow(sub_img)
+                img_plots[ind] = ax[2,ind].imshow(sub_img)
                 cur_ind += 1
                 if cur_ind==ind_sorted.shape[0]:
                     break
@@ -328,10 +434,31 @@ class RadiusEstimator():
             cur_frame += 1
 
         cap.release()
+        all_imgs = []
+        ll = len(list(saver.tracks.keys()))
+        for i in range(ll):
+            all_imgs.append([])
+        cap = cv2.VideoCapture(imgs)
+        while cap.isOpened():
+            frame_exists, img = cap.read()
+            if not frame_exists:
+                break
+            for i in range(ll):
+                rad_val = rad_maxes[i]#+30
+                y = max(int(saver.tracks[list(saver.tracks.keys())[i]]['x'][0]-rad_val),0)
+                x = max(int(saver.tracks[list(saver.tracks.keys())[i]]['y'][0]-rad_val),0)
+                x_end = min(int(x+rad_val*2),img.shape[0])
+                y_end = min(int(y+rad_val*2),img.shape[1])
+                sub_img = img[x:x_end,y:y_end,:]
+                all_imgs[i].append(sub_img)
+        cap.release()
+
         ax[0,0].set_title("Radius (pixels)")
         ax[1,0].set_title("Blur (higher = better focus)")
-        plt.savefig('{}'.format(os.path.join(out_path,'radius_estimate.png')))
+        self.handler = ChangeFocus(all_imgs,ax[0],ax[1],focus_lines,rad_lines,img_plots,all_rads,out_path,out_dict)
         plt.show()
+        out_dict = self.handler.get_rads()
+        self.handler.disconnect()
         response = input('Continue? (if no write n)')
         if response == 'n':
             if len(saver.tracks.keys()) != 1:
@@ -350,7 +477,7 @@ class RadiusEstimator():
                 x = max(int(saver.tracks[list(saver.tracks.keys())[i]]['y'][0]-rad_val),0)
                 x_end = min(int(x+rad_val*2),self.first_img.shape[0])
                 y_end = min(int(y+rad_val*2),self.first_img.shape[1])
-                self.draw_start = np.copy(self.first_img[x:x_end,y:y_end,:])
+                self.draw_start = np.copy(all_imgs[i][self.handler.t[i]])
                 self.draw = np.copy(self.draw_start)
                 cv2.imshow('drawer',self.draw)
                 while drawing:
@@ -363,15 +490,17 @@ class RadiusEstimator():
                 cv2.destroyAllWindows()
 
         print(out_path)
-        
+        del self.handler
         # save results
         with open('{}'.format(os.path.join(out_path,'radius_estimates.json')),'w') as f:
             json.dump(out_dict,f)
         
-        print(paths)
+        #print(paths)
         if paths != None:
-            for p in paths:
+            for p in paths[1:]:
                 print('copying to: {}'.format(os.path.split(p)[1]))
+                #print('copying to: {}'.format(os.path.join(p,'radius_estimates.json')))
+                
                 with open('{}'.format(os.path.join(p,'radius_estimates.json')),'w') as f:
                     json.dump(out_dict,f)
 
