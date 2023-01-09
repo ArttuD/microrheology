@@ -163,7 +163,7 @@ class RadiusEstimator():
 
         #Save path
         path = args['path']
-        vis = not args['visualize']
+        vis = not args['no_visualize']
 
         #Save all the images in the folder
         imgs = path
@@ -188,7 +188,7 @@ class RadiusEstimator():
 
         choose = 0
         # if using track_matched.json xy info
-        if not args['init']:
+        if not args['no_init']:
             if not args['repeats']:
                 coords,choose = self.get_track_info(os.path.split(path)[0])
             else:
