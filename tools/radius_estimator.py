@@ -259,6 +259,8 @@ class RadiusEstimator():
                         coords['big_%i'%idx] = {'x':b[0][1],'x2':b[1][1],'y':b[0][0],'y2':b[1][0]}
                     self.final_boundaries = []
                     choose += 1
+                if not vis and choose>0:
+                    cv2.destroyAllWindows()
                 
                 # Operate in small windows, loop over particles to track
                 for key in coords.keys():
