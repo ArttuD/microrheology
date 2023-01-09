@@ -42,7 +42,7 @@ for path_R in glob(os.path.join(args.path,'*01_*')):
         imgs = vids[np.argmin([os.path.getsize(i) for i in vids ])]
         args_dict['path'] = imgs
         paths = None
-        if not args.copy:
+        if not args['copy']:
             paths = glob('{}*'.format(path_R.split('_')[0][:-2]))
     #run radius estimator
     estimator.process_folder(args_dict,paths)
