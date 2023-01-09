@@ -336,7 +336,7 @@ class RadiusEstimator():
                         lap = np.inf
                     else:
                         lap = cv2.Laplacian(sub_img, cv2.CV_64F).var()
-                    self vis:
+                    if vis:
                         cv2.putText(image_out,'{}: th: {} lap: {}'.format(key, th, lap),(start_pos[0],start_pos[1]-10),cv2.FONT_HERSHEY_SIMPLEX,1,col,3)
                     # mid point to save
                     mid_y = (coords[key]['y2']+coords[key]['y'])/2
