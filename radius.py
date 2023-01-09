@@ -19,13 +19,13 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--path','-p',required=True,
                     help='Path to folder. eg. C:/data/imgs')
 parser.add_argument("--visualize",'-v', help="Visualize tracks",
-                    action="store_true", default=True)
+                    action="store_true")
 parser.add_argument("--init",'-i', help="use existing track.json info",
-                    action="store_true", default=True)
+                    action="store_true")
 parser.add_argument('--copy','-c',help='Copy radius estimation info to repeats',
-                    action="store_true",default=True)
+                    action="store_true")
 parser.add_argument('--repeats',help='Run estimation for all repeats',
-                    action="store_true",default=True)
+                    action="store_true")
 
 
 #Save arguments
