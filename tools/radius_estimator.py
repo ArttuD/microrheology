@@ -3,6 +3,7 @@ from glob import glob
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Button
 from tqdm import tqdm
 from tools.saver import Saver
 import time
@@ -17,12 +18,13 @@ import sys
 
 
 class ChangeFocus:
-    def __init__(self,imgs,rad_plots,focus_plots,focus_lines,rad_lines,img_plots,all_rads,out_path,rads):
+    def __init__(self,imgs,rad_plots,focus_plots,img_ax,focus_lines,rad_lines,img_plots,all_rads,out_path,rads):
         
         self.imgs = imgs
         self.focus_plots = focus_plots
         self.rad_plots = rad_plots
         self.img_plots = img_plots
+        self.img_ax = img_ax
         self.focus_lines = focus_lines
         self.rad_lines = rad_lines
         self.t = [0]*len(imgs)
@@ -33,6 +35,8 @@ class ChangeFocus:
         self.out_path = out_path
         self.rads = rads
         self.map = {idx:i for idx,i in enumerate(rads.keys())}
+        self.manual = [0]*len(imgs)
+        self.names = ['','Manual']
 
     @staticmethod
     def find(axes,ax):
@@ -80,6 +84,12 @@ class ChangeFocus:
             self.changed = True
 
             self.rads[self.map[a_id]] = c
+
+        elif event.inaxes in self.img_ax:
+            a_id = self.find(self.img_ax,event.inaxes)
+            self.manual[a_id] +=1
+            self.img_ax[a_id].set_title(self.names[self.manual[a_id]%2])
+            self.img_ax[a_id].figure.canvas.draw()
 
     def disconnect(self):
         self.focus_lines[0].figure.canvas.mpl_disconnect(self.cid)
@@ -424,7 +434,8 @@ class RadiusEstimator():
                 break
             # find all particles that have best focus
             while cur_frame == max_indices_sort[cur_ind]:
-                rad_val = rad_maxes[ind]+30
+                rad_val = rad_maxes[ind]#+30
+                rad_val = int(1.4*rad_val)
                 y = max(int(saver.tracks[list(saver.tracks.keys())[ind]]['x'][0]-rad_val),0)
                 x = max(int(saver.tracks[list(saver.tracks.keys())[ind]]['y'][0]-rad_val),0)
                 x_end = min(int(x+rad_val*2),img.shape[0])
@@ -449,6 +460,7 @@ class RadiusEstimator():
                 break
             for i in range(ll):
                 rad_val = rad_maxes[i]#+30
+                rad_val = int(1.4*rad_val)
                 y = max(int(saver.tracks[list(saver.tracks.keys())[i]]['x'][0]-rad_val),0)
                 x = max(int(saver.tracks[list(saver.tracks.keys())[i]]['y'][0]-rad_val),0)
                 x_end = min(int(x+rad_val*2),img.shape[0])
@@ -459,24 +471,21 @@ class RadiusEstimator():
 
         ax[0,0].set_title("Radius (pixels)")
         ax[1,0].set_title("Blur (higher = better focus)")
-        self.handler = ChangeFocus(all_imgs,ax[0],ax[1],focus_lines,rad_lines,img_plots,all_rads,out_path,out_dict)
+        self.handler = ChangeFocus(all_imgs,ax[0],ax[1],ax[2],focus_lines,rad_lines,img_plots,all_rads,out_path,out_dict)
         plt.show()
         out_dict = self.handler.get_rads()
         self.handler.disconnect()
-        response = input('Continue? (if no write n)')
-        if response == 'n':
-            if len(saver.tracks.keys()) != 1:
-                response2 = input('which ones= (, separated e.g 0,2,5): ')
-                response_values = [int(i) for i in response2.split(',')]
-            else:
-                response_values = [0]
+        response_vals = np.array(self.handler.manual)%2
+        if response_vals.sum()>0:
+            response_values = np.where(response_vals==1)[0].tolist()
             for i in response_values:
                 self.refPt = []
                 self.final_boundaries = []
                 cv2.namedWindow('drawer',cv2.WINDOW_NORMAL)
                 cv2.setMouseCallback("drawer", self.click_and_draw)
                 drawing = True
-                rad_val = rad_maxes[i]+30
+                rad_val = rad_maxes[i]#+30
+                rad_val = int(1.4*rad_val)
                 y = max(int(saver.tracks[list(saver.tracks.keys())[i]]['x'][0]-rad_val),0)
                 x = max(int(saver.tracks[list(saver.tracks.keys())[i]]['y'][0]-rad_val),0)
                 x_end = min(int(x+rad_val*2),self.first_img.shape[0])
@@ -519,7 +528,7 @@ if __name__ == "__main__":
                         help='Path to folder. eg. C:/data/imgs')
     parser.add_argument("--no_visualize",'-v', help="Don't visualize tracks",
                         action="store_true")
-    parser.add_argument("--no_init",'-i', help="Do not use existing track.json info",
+    parser.add_argument("--no_init",'-i', help="Do not use existing track_matched.json info",
                         action="store_true")
     parser.add_argument('--no_copy','-c',help='Do not copy radius estimation info to repeats',
                         action="store_true")
@@ -540,4 +549,3 @@ if __name__ == "__main__":
             if not args.copy:
                 paths = glob('{}*'.format(path.split('_')[0][:-2]))
             estimator.process_folder(args_dict,paths)
-                

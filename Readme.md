@@ -126,8 +126,9 @@ Radius estimate of the particle as a squared depence on |$G^*$|. We added an ext
   python radius.py -p ".../exampleData/Agarose30um"
   ```
 2. Code reads and processes the file: 1) reads the whole z-stack, 2) reads a cropped period of the video inwhich the maximum area is observed
-3. Radius estimates of the particles are displayed. By submiting "n" on the command line, the estimates are accepted. Any other symbols rejects the estimates. On the command line, write indices of particles which radius estimate you want to manually determine. Separate indices by a ",". <br>
-A crop of the particle is displayed, drag an circle around its contours by pressing left mouse button, and dragging it on the other side of the particle before releasing
+3. Radius estimates of the particles are displayed. You can fix the automatic estimates by moving the red bars in the first two rows of the images.
+4. Additionally you can do manual radius estimation by clicking the images which you want evaluate manually. Text ```manual``` appears on top of the image. Remember to move the red bars to the best focus so that manual estimation is easier.
+5. Exit the visualization by pressing ```q```. A crop of the particle is displayed if you chose to do manual estimation. Drag an circle around its contours by pressing left mouse button, and dragging it on the other side of the particle before releasing
 
 ### Optional arguments
 * ```--no_init```: Choose boxes manually
