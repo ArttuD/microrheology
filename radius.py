@@ -43,7 +43,8 @@ for path_R in glob(os.path.join(args.path,'*01_*')):
         args_dict['path'] = imgs
         paths = None
         if not args.no_copy:
-            paths = glob('{}*'.format(path_R.split('_')[0][:-2]))
+            head,tail = os.path.split(path_R)
+            paths = glob('{}*'.format(os.path.join(head,tail.split('_')[0][:-2])))
     #run radius estimator
     estimator.process_folder(args_dict,paths)
 
