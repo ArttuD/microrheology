@@ -163,7 +163,7 @@ class RadiusEstimator():
 
         #Save path
         path = args['path']
-        vis = args['visualize']
+        vis = not args['visualize']
 
         #Save all the images in the folder
         imgs = path
@@ -188,7 +188,7 @@ class RadiusEstimator():
 
         choose = 0
         # if using track_matched.json xy info
-        if args['init']:
+        if not args['init']:
             if not args['repeats']:
                 coords,choose = self.get_track_info(os.path.split(path)[0])
             else:
@@ -319,25 +319,25 @@ class RadiusEstimator():
                         cY = M["m10"] / M["m00"]
                         cX = M["m01"] / M["m00"]
 
+                    start_pos = (int(np.round(coords[key]['y'])),int(np.round(coords[key]['x'])))
+                    end_pos = (int(np.round(coords[key]['y2'])),int(np.round(coords[key]['x2'])))
+                    # pretty colors
+                    c = int(split[-1])
+                    col = None
+                    if split[0] == 'ref':
+                        col = self.colors_ref[(c+1)%8]
+                    else:
+                        col = self.colors_big[(c+1)%8]
+                    # visualize
                     if vis:
-                        start_pos = (int(np.round(coords[key]['y'])),int(np.round(coords[key]['x'])))
-                        end_pos = (int(np.round(coords[key]['y2'])),int(np.round(coords[key]['x2'])))
-                        # pretty colors
-                        c = int(split[-1])
-                        col = None
-                        if split[0] == 'ref':
-                            col = self.colors_ref[(c+1)%8]
-                        else:
-                            col = self.colors_big[(c+1)%8]
-                        # visualize
                         cv2.rectangle(image_out, start_pos, end_pos, col, 5)
-                        #add labels var 
-                        if (sub_img.shape[0] == 0) or (sub_img.shape[1] == 0):
-                            lap = np.inf
-                        else:
-                            lap = cv2.Laplacian(sub_img, cv2.CV_64F).var()
+                    #add labels var 
+                    if (sub_img.shape[0] == 0) or (sub_img.shape[1] == 0):
+                        lap = np.inf
+                    else:
+                        lap = cv2.Laplacian(sub_img, cv2.CV_64F).var()
+                    self vis:
                         cv2.putText(image_out,'{}: th: {} lap: {}'.format(key, th, lap),(start_pos[0],start_pos[1]-10),cv2.FONT_HERSHEY_SIMPLEX,1,col,3)
-
                     # mid point to save
                     mid_y = (coords[key]['y2']+coords[key]['y'])/2
                     mid_x = (coords[key]['x2']+coords[key]['x'])/2
@@ -351,9 +351,11 @@ class RadiusEstimator():
 
                 #Show image and break if press ctrl+C
                 if k1 == 0:
-                    cv2.putText(image_out,'Estimating thresholds',(0,80),cv2.FONT_HERSHEY_SIMPLEX,3,(0,0,0),3)
+                    if vis:
+                        cv2.putText(image_out,'Estimating thresholds',(0,80),cv2.FONT_HERSHEY_SIMPLEX,3,(0,0,0),3)
                 else:
-                    cv2.putText(image_out,'Computing radius',(0,80),cv2.FONT_HERSHEY_SIMPLEX,3,(0,0,0),3)
+                    if vis:
+                        cv2.putText(image_out,'Computing radius',(0,80),cv2.FONT_HERSHEY_SIMPLEX,3,(0,0,0),3)
                 if vis:
                     cv2.imshow('win',image_out)
                 k = cv2.waitKey(1) & 0xFF
@@ -511,15 +513,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="""Estimate radius with more accuracy from sweep videos""")
 
-    parser.add_argument('--path','-p',required=False,
+    parser.add_argument('--path','-p',required=True,
                         help='Path to folder. eg. C:/data/imgs')
-    parser.add_argument("--visualize",'-v', help="Plot tracking results",
+    parser.add_argument("--no_visualize",'-v', help="Don't visualize tracks",
                         action="store_true")
-    parser.add_argument("--init",'-i', help="use existing track.json info",
+    parser.add_argument("--no_init",'-i', help="Do not use existing track.json info",
                         action="store_true")
-    parser.add_argument('--focus','-f',help='Use best focus for manual instead of first frame',
+    parser.add_argument('--no_copy','-c',help='Do not copy radius estimation info to repeats',
                         action="store_true")
-    parser.add_argument('--copy','-c',help='Copy radius estimation info to repeats',
+    parser.add_argument('--repeats',help='Run estimation for all repeats',
                         action="store_true")
 
     args = parser.parse_args()
@@ -533,7 +535,7 @@ if __name__ == "__main__":
             imgs = vids[np.argmin([ os.path.getsize(i) for i in vids ])]
             args_dict['path'] = imgs
             paths = None
-            if args.copy:
+            if not args.copy:
                 paths = glob('{}*'.format(path.split('_')[0][:-2]))
             estimator.process_folder(args_dict,paths)
                 

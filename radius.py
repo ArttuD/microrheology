@@ -18,11 +18,11 @@ parser = argparse.ArgumentParser(
 
 parser.add_argument('--path','-p',required=True,
                     help='Path to folder. eg. C:/data/imgs')
-parser.add_argument("--visualize",'-v', help="Visualize tracks",
+parser.add_argument("--no_visualize",'-v', help="Don't visualize tracks",
                     action="store_true")
-parser.add_argument("--init",'-i', help="use existing track.json info",
+parser.add_argument("--no_init",'-i', help="Do not use existing track.json info",
                     action="store_true")
-parser.add_argument('--copy','-c',help='Copy radius estimation info to repeats',
+parser.add_argument('--no_copy','-c',help='Do not copy radius estimation info to repeats',
                     action="store_true")
 parser.add_argument('--repeats',help='Run estimation for all repeats',
                     action="store_true")
@@ -42,7 +42,7 @@ for path_R in glob(os.path.join(args.path,'*01_*')):
         imgs = vids[np.argmin([os.path.getsize(i) for i in vids ])]
         args_dict['path'] = imgs
         paths = None
-        if args.copy:
+        if not args.copy:
             paths = glob('{}*'.format(path_R.split('_')[0][:-2]))
     #run radius estimator
     estimator.process_folder(args_dict,paths)
