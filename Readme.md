@@ -129,6 +129,12 @@ Radius estimate of the particle as a squared depence on |$G^*$|. We added an ext
 3. Radius estimates of the particles are displayed. By submiting "n" on the command line, the estimates are accepted. Any other symbols rejects the estimates. On the command line, write indices of particles which radius estimate you want to manually determine. Separate indices by a ",". <br>
 A crop of the particle is displayed, drag an circle around its contours by pressing left mouse button, and dragging it on the other side of the particle before releasing
 
+### Optional arguments
+* ```--no_init```: Choose boxes manually
+* ```--no_visualize```: Do not visualize
+* ```--no_copy```: Do not copy radius estimates to repeats
+* ```--repeats```: Also estimate radius for repeats that are missing from repeat 1. This might be inaccurate because the magnetic particles may have moved during the repeats (so the position of the box is slighly wrong)
+
 # Analyze and Plot the Results
 
 This script uses the files produced by previous scripts to find |$G^*$| and $\phi$ values. 
