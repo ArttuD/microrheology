@@ -397,9 +397,15 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
                 counter += 1
             else:
                 if not peaks_close:
-                    ax_fit[sub,idx%plot_ind].set_facecolor((255/255, 205/255, 69/255))
+                    if plot_ind==1:
+                        ax_fit.set_facecolor((255/255, 205/255, 69/255))
+                    else:
+                        ax_fit[sub,idx%plot_ind].set_facecolor((255/255, 205/255, 69/255))
                 else:
-                    ax_fit[sub,idx%plot_ind].set_facecolor((252/255, 215/255, 212/255))
+                    if plot_ind==1:
+                        ax_fit.set_facecolor((252/255, 215/255, 212/255))
+                    else:
+                        ax_fit[sub,idx%plot_ind].set_facecolor((252/255, 215/255, 212/255))
 
         fig_fit.suptitle('Track %s'%k_num)
         file_name = os.path.join(path, 'Track_{}.jpg'.format(k_num))
