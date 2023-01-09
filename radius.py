@@ -24,6 +24,8 @@ parser.add_argument("--init",'-i', help="use existing track.json info",
                     action="store_true", default=True)
 parser.add_argument('--copy','-c',help='Copy radius estimation info to repeats',
                     action="store_true",default=True)
+parser.add_argument('--repeats',help='Run estimation for all repeats',
+                    action="store_true",default=True)
 
 
 #Save arguments
