@@ -310,15 +310,15 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
                 ax_fit.plot(t2,sample,label='data')
                 ax_fit.plot(t2,func_disp(t2,*p2),label='fit')
                 ax_fit.set_title(r'Ref %i'%(idx))
-
-            if idx !=0 and idx%plot_ind == 0:
-                sub += 1
-            if idx<=8:
-                ax_fit[sub,idx%plot_ind].plot(t2,sample,label='data')
-                ax_fit[sub,idx%plot_ind].plot(t2,func_disp(t2,*p2),label='fit')
-                ax_fit[sub,idx%plot_ind].set_title(r'Ref %i'%(idx))
-            if idx==0:
-                ax_fit[sub,idx%plot_ind].set_ylabel(r'$\mu m$')
+            else:
+                if idx !=0 and idx%plot_ind == 0:
+                    sub += 1
+                if idx<=8:
+                    ax_fit[sub,idx%plot_ind].plot(t2,sample,label='data')
+                    ax_fit[sub,idx%plot_ind].plot(t2,func_disp(t2,*p2),label='fit')
+                    ax_fit[sub,idx%plot_ind].set_title(r'Ref %i'%(idx))
+                if idx==0:
+                    ax_fit[sub,idx%plot_ind].set_ylabel(r'$\mu m$')
 
             #Distance between magnetic particle and reference
             x_big = np.array(tracking_data[big_probe_indices[big_probe_loc]]['x'])*m
@@ -375,7 +375,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
             if found:
                 areas = []
                 for ee in locs:
-                    if len(ax_fit) == 0:
+                    if plot_ind == 1:
                         ax_fit.axvline(ee,color='red')
                     else:
                         ax_fit[sub,idx%plot_ind].axvline(ee,color='red')
