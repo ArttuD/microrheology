@@ -154,6 +154,8 @@ class RadiusEstimator():
     def get_track_info(self,path):
         coords = {}
         track_path = os.path.join(path,'track_matched.json')
+        if not os.path.exists(track_path):
+            track_path = os.path.join(path,'track.json')
         choose = 0
         if os.path.exists(track_path):
             with open(track_path,'r') as f:
@@ -179,7 +181,9 @@ class RadiusEstimator():
         imgs = path
 
         # needed for the saver
-        json_name = '%s/track_matched.json'%path
+        json_name = os.path.join(os.path.split(path)[0],'track_matched.json')
+        if not os.path.exists(json_name):
+            json_name = os.path.join(os.path.split(path)[0],'track.json')
 
         out_path = path
         if out_path.endswith('.mp4'):
