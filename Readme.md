@@ -114,8 +114,13 @@ python sync.py -p ".../exampleData/Agarose30um"
 Mathcing indices is not compulsory but is needed if the spheres are not tracked in the same order over the repeats or there is different number of particles tracked over the repeats.
 
 ```sh
-python match_indices.py -p ".../exampleData/Agarose30um" --radius 61
+python match_indices.py -p ".../exampleData/Agarose30um/*" --radius 61
 ```
+### arguments
+* ```--radius```: maximum distance in micrometers for shift in repeats
+* ```-v```: visualize matching
+
+
 
 # Radius Estimator
 
