@@ -1,5 +1,6 @@
 # %%
 import numpy as np
+import sys
 from glob import glob
 import argparse
 import os
@@ -37,8 +38,10 @@ estimator = RadiusEstimator()
 #Find z-stack video from the folders of each first repeat (if does not exist takes actual measurement)
 for path_R in glob(os.path.join(args.path,'*01_*')):
     if '1_' in path_R:
-        print("path above")  
         vids = glob('{}/*.mp4'.format(path_R))
+        if len(vids)==0:
+            print(f'Videos missing from {path_R}. Exiting..')
+            sys.exit(0)
         imgs = vids[np.argmin([os.path.getsize(i) for i in vids ])]
         args_dict['path'] = imgs
         paths = None
