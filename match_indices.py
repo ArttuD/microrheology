@@ -1,11 +1,14 @@
 # %%
 import json
+from PIL.Image import new
+import matplotlib
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 import cv2
 import matplotlib.pyplot as plt
 from glob import glob
 import os
+from sklearn.cluster import DBSCAN
 from tqdm import tqdm
 import argparse
 
@@ -14,10 +17,10 @@ parser = argparse.ArgumentParser(
                     If no automatic assignment possible, it opens a window. Click corresponding images left and right
                     in order.""")
 parser.add_argument("--path",'-p', help="path to data folder. eg. G:/maria/10_10",required=True)
-parser.add_argument("--radius",'-rad', help="default radius for distance calculation. Only affect cost matrix e.g 61.0",required=True,type=float)
+parser.add_argument("--radius",'-rad', help="maximum distance between two samples in cluster",default=8.0,type=float)
+parser.add_argument('--vis','-v',help='Visualize match',
+                    action="store_true")
 args = parser.parse_args()
-
-default_rad = args.radius
 
 def op(d):
     with open(d,'r') as f:
@@ -29,7 +32,9 @@ paths = glob('{}'.format(args.path))
 paths = [i for i in paths if 'results' not in i]
 prev = None
 #default_rad = 61.0
-pix_to_mm = 0.2653846153846154
+#pix_to_um = 3.45/(20)
+pix_to_um = 3.45/(20*.63)
+default_rad = args.radius
 all_data = []
 sub = []
 # find groups (repeats)
@@ -37,7 +42,6 @@ for path in paths:
     folder_name = os.path.split(path)[1]
     whole = folder_name.split('_')[0]
     w = whole[:12]
-    print(w)
     #name = int(whole[12:])
     if prev is None:
         prev = w
@@ -49,30 +53,31 @@ for path in paths:
         sub = []
         sub.append(path)
     prev = w
+if len(sub) > 1:
+    all_data.append(sub)
 
 cols = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255)]
-for repeats in tqdm(all_data):
-    # match against the first repeat
-    a = os.path.join(repeats[0],'track.json')
-    img1 = cv2.imread(os.path.join(repeats[0],'tracker_reference.png'))
-    if img1 is None:
-        print("\ntracker_reference.png not found in  {}. Creating empty img".format(repeats[0]))
-        img1 = np.zeros((2048,1536,3),dtype=np.uint8)
-    a_data = op(a)
-    a_d = np.array([(a_data[i]['x'][0],a_data[i]['y'][0],a_data[i]['radius'][0]) for i in a_data.keys() if 'big_' in i])
+for idx,repeats in tqdm(enumerate(all_data)):
+    img1 = np.zeros((1544,2064,3),dtype=np.uint8)
     comb = np.zeros((img1.shape[0],img1.shape[1]*len(repeats),3),dtype=np.uint8)
     delta = img1.shape[1]
-    comb[:,:delta,:] = img1
-    unique_id = a_d.shape[0]
-    #fig_1,ax_1 = plt.subplots(1,1)
-    for r in range(1,len(repeats)):
+    print(repeats[0])
+    track_data = []
+    info = []
+    repeat_id = []
+    key_names = []
+    for r in range(len(repeats)):
         b = os.path.join(repeats[r],'track.json')
-
+        #print(os.path.join(repeats[r],'tracker_reference.png'))
+        img2 = cv2.imread(os.path.join(repeats[r],'tracker_reference.png'))
+        comb[:,(delta*r):(delta*(r+1)),:] = img2
         b_data = op(b)
-
+        track_data.append(b_data)
+        b_keys = []
         b_d_ = []
         for i in b_data.keys():
             if 'big_' in i:
+                b_keys.append(i)
                 rad = b_data[i]['radius']
                 if len(rad) == 0:
                     rad = default_rad
@@ -81,114 +86,49 @@ for repeats in tqdm(all_data):
                 b_d_.append((b_data[i]['x'][0],b_data[i]['y'][0],rad))
 
         b_d = np.array(b_d_)
-        img2 = cv2.imread(os.path.join(repeats[r],'tracker_reference.png'))
-        if img2 is None:
-            img2 = np.zeros((img1.shape[0],img1.shape[1],3),dtype=np.uint8)
-        comb[:,(delta*r):(delta*(r+1)),:] = img2
-        # distance matrix with masking
-        # x y dist
-        dist_euc = np.linalg.norm(a_d[:,None,:2] - b_d[None,:,:2], axis=-1)
-        dist_cond = dist_euc>(20/pix_to_mm)
-        dist_euc[dist_cond] = np.inf
-        dist_radius = np.linalg.norm(a_d[:,None,-1:] - b_d[None,:,-1:], axis=-1)
-        dist_radius[dist_radius>(4/pix_to_mm)] = np.inf
-        dist = dist_euc+dist_radius
-        # radius
-        #dist = np.linalg.norm(a_d[:,None,:] - b_d[None,...], axis=-1)
-        # optimal assignment
-        try:
-            row_ind, col_ind = linear_sum_assignment(dist)
-        except ValueError:
-            print("no assignment: {} repeat: {}".format(repeats[0],r))
-            coords = []
-            fig,ax = plt.subplots(1,1)
-            comb_ = np.zeros((img1.shape[0],img1.shape[1]*2,3),dtype=np.uint8)
-            comb_[:,:delta,:] = img1
-            comb_[:,delta:,:] = img2
-            def onclick(event):
-                global ix, iy
-                ix, iy = event.xdata, event.ydata
-                print('x = %d, y = %d'%(ix, iy))
-
-                global coords
-                coords.append((ix, iy))
-
-                return coords
-            cid = fig.canvas.mpl_connect('button_press_event', onclick)
-            fig.show()
-            while True:
-                ax.imshow(comb_)
-                if plt.waitforbuttonpress():
-                    plt.close()
-                    break
-                plt.pause(0.01)
-            fig.canvas.mpl_disconnect(cid)
-            col_ind = [-1]*(len(coords)//2)
-            for i in range(0,len(coords),2):
-                # find closest match
-                #print(np.linalg.norm(coords[i]-a_d[:,:2],axis=1))
-                closest_a = np.argmin(np.linalg.norm(coords[i]-a_d[:,:2],axis=1))
-                coord_right = coords[i+1]
-                coord_right = (coord_right[0]-delta,coord_right[1])
-                closest_b = np.argmin(np.linalg.norm(coord_right-b_d[:,:2],axis=1))
-                col_ind[closest_b] = closest_a
-            c_i = np.array(col_ind)
-            row_ind = np.arange(c_i.shape[0])[c_i != -1]
-            print(row_ind)
-            col_ind = c_i[c_i != -1]
-            print(col_ind)
-        #fig = plt.figure(figsize=(20,20))
-        
-
-        # mapping vis
-        matched_data = {}
-        cc = cols[r%len(cols)]
-        for idx,ind in zip(row_ind,col_ind):
-            # b (col index) mapped to a (row index)
-            proposal = b_data['big_{}'.format(ind)]
-            x_proposal = int(proposal['x'][0])+delta*r
-            y_proposal = int(proposal['y'][0])
-            new_id = 'big_{}'.format(idx)
-            matched_data[new_id] = {}
-            matched_data[new_id]['x'] = proposal['x']
-            matched_data[new_id]['y'] = proposal['y']
-            matched_data[new_id]['radius'] = proposal['radius']
-            matched_data[new_id]['label'] = proposal['label']
-            matched_data[new_id]['timestamps'] = proposal['timestamps']
-
-            origin = a_data['big_{}'.format(idx)]
-            x_origin = int(origin['x'][0])
-            y_origin = int(origin['y'][0])
-
-            comb = cv2.line(comb, (x_proposal,y_proposal), (x_origin,y_origin), cc, 5)
-        
-        # add unmatched
-        indices = np.arange(b_d.shape[0])
-        for i in indices:
-            if i not in col_ind:
-                print('adding unique id {} in {} repeat: {}'.format(unique_id,os.path.split(repeats[0])[-1],r))
-                new_id = 'big_{}'.format(unique_id)
-                matched_data[new_id] = {}
-                matched_data[new_id]['x'] = proposal['x']
-                matched_data[new_id]['y'] = proposal['y']
-                matched_data[new_id]['radius'] = proposal['radius']
-                matched_data[new_id]['label'] = proposal['label']
-                matched_data[new_id]['timestamps'] = proposal['timestamps']
-                unique_id += 1
-
-        for key in b_data.keys():
-            if 'ref_' in key:
-                new_id = key
-                matched_data[new_id] = {}
-                matched_data[new_id]['x'] = b_data[new_id]['x']
-                matched_data[new_id]['y'] = b_data[new_id]['y']
-                matched_data[new_id]['radius'] = b_data[new_id]['radius']
-                matched_data[new_id]['label'] = b_data[new_id]['label']
-                matched_data[new_id]['timestamps'] = b_data[new_id]['timestamps']
-
-        with open(os.path.join(repeats[r],'track_matched.json'),'w') as f:
-            json.dump(matched_data,f)
-
+        info.append(b_d)
+        repeat_id.append([r]*b_d.shape[0])
+        key_names.append(b_keys)
+    xy = np.concatenate([i[:,:2] for i in info])
+    repeat_id = np.concatenate(repeat_id)
+    key_names = np.concatenate(key_names)
+    clustering = DBSCAN(eps=2*default_rad, min_samples=1).fit(xy*pix_to_um)
+    for idx2,i in enumerate(np.unique(clustering.labels_)):
+        c = clustering.labels_==i
+        x = repeat_id[c]*img1.shape[1]+xy[c,0]
+        y = xy[c,1]
+        pts = np.stack([x,y]).T.reshape((-1,1,2)).astype(int)
+        comb = cv2.polylines(comb, [pts], False, (0,255,0), 5)
+        for k,j in zip(repeat_id[c],xy[c,:2]):
+            comb = cv2.drawMarker(comb, (int(j[0]+k*img1.shape[1]),int(j[1])), (255, 0, 0), 0, 30, 4)
+            #populate track matched
+        #print(repeat_id[c])
+        #for track_id,k_name in zip(repeat_id[c],key_names[c]):
+        #    #print(f'repeat: {track_id} new: big_{i} pop: {k_name}')
+        #    track_data[track_id]['big_{}'.format(idx2)] = track_data[track_id].pop(k_name)
+        plt.scatter(xy[c,0],xy[c,1])
+        plt.text(np.mean(xy[c,0]),np.mean(xy[c,1]),f'{idx2}')
+    #print(repeat_id,clustering.labels_,key_names)
+    track_data_2 = []
+    for i in range(len(track_data)):
+        track_data_2.append({})
+    for i in range(len(track_data)):
+        for j in list(track_data[i].keys()):
+            if 'big_' not in j:
+                track_data_2[i][j] = track_data[i][j]
+    for track_id,new_name,old_names in zip(repeat_id,clustering.labels_,key_names):
+        #print(f'repeat: {track_id} new: big_{i} pop: {k_name}')
+        track_data_2[track_id]['big_{}'.format(new_name)] = track_data[track_id].pop(old_names)
+    for r in range(len(repeats)):
+        b = os.path.join(repeats[r],'track_matched.json')
+        with open(b,'w') as f:
+            json.dump(track_data_2[r],f)
+    for i in track_data_2:
+        for j in list(i.keys()):
+            if 'big_' in j:
+                plt.text(i[j]['x'][0],i[j]['y'][0],'{}'.format(j))
     cv2.imwrite(os.path.join(repeats[0],'track_reference_matched.png'),comb)
-    #ax_1.imshow(comb)
-# %%
+    if args.vis:
+        plt.show()
+    else:
+        plt.close()
