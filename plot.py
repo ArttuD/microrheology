@@ -258,7 +258,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
             t2 = t2.astype(np.float32)
 
             #Fit
-            sample = disps[k][idx][d_start:d_end]
+            sample = -disps[k][idx][d_start:d_end]
             sample = gaussian_filter1d(sample,5)
             
             # find fit
