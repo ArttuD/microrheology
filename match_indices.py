@@ -58,7 +58,14 @@ if len(sub) > 1:
 
 cols = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255)]
 for idx,repeats in tqdm(enumerate(all_data)):
+    img_size_path = os.path.join(repeats[0],'tracker_reference.png')
     img1 = np.zeros((1544,2064,3),dtype=np.uint8)
+    if os.path.exists(img_size_path):
+        img_tmp = cv2.imread(img_size_path)
+        img1 = np.zeros(img_tmp.shape,dtype=np.uint8)
+    else:
+        print(f'No tracker_reference.png in {repeats[0]}. Using default (1544x2064)')
+
     comb = np.zeros((img1.shape[0],img1.shape[1]*len(repeats),3),dtype=np.uint8)
     delta = img1.shape[1]
     print(repeats[0])
