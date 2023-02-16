@@ -186,8 +186,9 @@ class RadiusEstimator():
             json_name = os.path.join(os.path.split(path)[0],'track.json')
 
         out_path = path
-        if out_path.endswith('.mp4'):
+        if out_path.endswith('.mp4') or out_path.endswith('.avi'):
             out_path = os.path.split(out_path)[0]
+
 
         print("Saving data to: {}".format(out_path))
 
@@ -546,7 +547,11 @@ if __name__ == "__main__":
     
     for path in glob(os.path.join(args.path,'*')): 
         if '01_' in path:    
-            vids = glob('{}/*.mp4'.format(path))
+            vids_mp4 = glob('{}/*.mp4'.format(path))
+            vids_avi = glob('{}/*.avi'.format(path))
+            vids = vids_mp4
+            if len(vids_mp4) == 0:
+                vids = vids_avi
             imgs = vids[np.argmin([ os.path.getsize(i) for i in vids ])]
             args_dict['path'] = imgs
             paths = None
