@@ -5,6 +5,7 @@ from tqdm import tqdm
 from tools.saver import Saver
 import argparse
 import os
+import sys
 
 #Incease birghtness if the video is dark (visualization)
 def increase_brightness(img, value=30):
@@ -52,6 +53,11 @@ track_cells = args.cells
 
 #Pick acutal measurement video from each folder
 vids = glob('{}/*.mp4'.format(path))
+if len(vids)==0:
+    vids = glob('{}/*.avi'.format(path))
+    if len(vids)==0:
+        print(f'No videos in {path}. Exiting')
+        sys.exit(0)
 imgs = vids[np.argmax([ os.path.getsize(i) for i in vids ])]
 
 #create a file where data is saved
