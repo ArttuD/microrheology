@@ -253,6 +253,7 @@ if __name__ == "__main__":
 
     argParser = argparse.ArgumentParser()
     argParser.add_argument("-p", "--path", help="path and name of output video")
+    argParser.add_argument("-s", "--no_stack", help="If you dont want to record and check exposure", action = "store_true")
 
     args = argParser.parse_args()
 
@@ -263,7 +264,7 @@ if __name__ == "__main__":
     print("Pixel type ", camClass.get_Value(DCAM_IDPROP.IMAGE_PIXELTYPE))
     #camClass.showProperties()
     print("exposure time set 25s, success: ", camClass.set_Value(DCAM_IDPROP.EXPOSURETIME, 24.99/1000), "\nexposure ", camClass.get_Value(DCAM_IDPROP.EXPOSURETIME) )
-    print("Setting framerate to 40fps, success:", camClass.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, 10), camClass.get_Value(DCAM_IDPROP.INTERNALFRAMERATE))
+    print("Setting framerate to 40fps, success:", camClass.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, 40), camClass.get_Value(DCAM_IDPROP.INTERNALFRAMERATE))
     
     #self, hPos,vPost, hSize, wsize, status=False
     h,w = camClass.get_Dim()
@@ -271,22 +272,19 @@ if __name__ == "__main__":
     h,w = camClass.get_Dim()
     print("WxH ", w, "x", h)
     
-    print("Allocating buffer ", camClass.allocateBuffer(3))
-    print("Please, tune exposure time from the microscope and press Q to start the measurements")
-    
-    camClass.liveImage()
-    
-    time.sleep(2)
-    print("exposure time set 25s, success: ", camClass.set_Value(DCAM_IDPROP.EXPOSURETIME, 24.99/1000), "\nexposure ", camClass.get_Value(DCAM_IDPROP.EXPOSURETIME) )
-    print("Setting framerate to 40fps, success:", camClass.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, 40), camClass.get_Value(DCAM_IDPROP.INTERNALFRAMERATE))
-    
-    camClass.allocateBuffer(1000)
-    camClass.initVideo(flag = True)
-    
-    input("Press Enter to continue perform Z-scan...")
-    camClass.getFrame(flag = True)
+    if not args.not_stack:
+        print("Allocating buffer ", camClass.allocateBuffer(3))
+        print("Please, tune exposure time from the microscope and press Q to start the measurements")
+        camClass.liveImage()
+        time.sleep(2)
 
-    time.sleep(1)
+        #print("exposure time set 25s, success: ", camClass.set_Value(DCAM_IDPROP.EXPOSURETIME, 24.99/1000), "\nexposure ", camClass.get_Value(DCAM_IDPROP.EXPOSURETIME) )
+        #print("Setting framerate to 40fps, success:", camClass.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, 40), camClass.get_Value(DCAM_IDPROP.INTERNALFRAMERATE))
+        camClass.allocateBuffer(1000)
+        camClass.initVideo(flag = True)
+        input("Press Enter to continue perform Z-scan...")
+        camClass.getFrame(flag = True)
+        time.sleep(1)
 
     camClass.allocateBuffer(1000)
     camClass.initVideo(flag = False)
