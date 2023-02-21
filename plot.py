@@ -30,6 +30,8 @@ parser.add_argument('--label','-l',required=True,
                     help='Give x-label for the plots')
 parser.add_argument('--particle_size','-s',required=True,
                     help='Give the size of the particles (30 or 100)')
+parser.add_argument('--pixel_size',default=6.5,
+                    help='Determine pixel size. For old camera the pixel size is 3.45/20 or 3.45/(20*0.63)')
 
 
 #Save arguments
@@ -44,7 +46,8 @@ particle_size =  args.particle_size
 #100µm Agarose measurements
 #m = 3.45/(20)
 #For hetergeneity measurements
-m = 3.45/(20*0.63)
+#m = 3.45/(20*0.63)
+m = args.pixel_size
   
 #Calibration constant
 if particle_size == "30":
