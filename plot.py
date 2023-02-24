@@ -49,7 +49,7 @@ flip = 1. if args.flip else -1.
 #m = 3.45/(20)
 #For hetergeneity measurements
 #m = 3.45/(20*0.63)
-m = args.pixel_size
+m = float(args.pixel_size)
   
 #Calibration constant
 if particle_size == "30":
