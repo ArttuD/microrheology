@@ -98,9 +98,11 @@ class camera:
         if flag:
             print("Aqcuiring 1000 frames")
             cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
+            threshold = 1000
         else:
             cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
             print("Aqcuiring ", int(85/(self.exposure)), "frames")
+            threshold = 2500
         while self.iWindowStatus >= 0:
             if self.dcam.wait_capevent_frameready(self.timeout) is not False:
                 x = self.dcam.buf_getframe(self.i,self.color)
@@ -133,7 +135,7 @@ class camera:
                     
                     self.i += 1
                     j += 1
-                    if self.i == 1000:
+                    if self.i == threshold:
                         self.i = 0
                     #break
             else: 
@@ -286,7 +288,7 @@ if __name__ == "__main__":
         camClass.getFrame(flag = True)
         time.sleep(1)
 
-    camClass.allocateBuffer(1000)
+    camClass.allocateBuffer(2500)
     camClass.initVideo(flag = False)
     input("Press Enter to continue to measurements... ")
     time.sleep(1)
