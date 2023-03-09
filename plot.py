@@ -30,6 +30,10 @@ parser.add_argument('--label','-l',required=True,
                     help='Give x-label for the plots')
 parser.add_argument('--particle_size','-s',required=True,
                     help='Give the size of the particles (30 or 100)')
+parser.add_argument('--pixel_size',default=6.5/(0.65*20),
+                    help='Determine pixel size. For old camera the pixel size is 3.45/20 or 3.45/(20*0.63)')
+parser.add_argument('--flip','-f',help='Flip sinusoids',
+                    action="store_true")
 
 
 #Save arguments
@@ -37,14 +41,15 @@ args = parser.parse_args()
 path = args.path
 x_label =  args.label
 particle_size =  args.particle_size
-
+flip = 1. if args.flip else -1.
 
 #µm/pixel
 
 #100µm Agarose measurements
 #m = 3.45/(20)
 #For hetergeneity measurements
-m = 3.45/(20*0.63)
+#m = 3.45/(20*0.63)
+m = float(args.pixel_size)
   
 #Calibration constant
 if particle_size == "30":
@@ -258,7 +263,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
             t2 = t2.astype(np.float32)
 
             #Fit
-            sample = -disps[k][idx][d_start:d_end]
+            sample = flip*disps[k][idx][d_start:d_end]
             sample = gaussian_filter1d(sample,5)
             
             # find fit

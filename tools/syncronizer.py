@@ -12,6 +12,9 @@ class syncronizer:
 
     
     def __init__(self,master_path,used,auto_on,avg_preprocess):
+        self.used_default = used
+        self.auto_on_default = auto_on
+        self.avg_preprocess_default = avg_preprocess
         self.master_path = master_path
         self.used = used
         self.auto_on = auto_on
@@ -174,3 +177,7 @@ class syncronizer:
             else:
                 print("Using automatic: {}".format(val))
             np.save(out_path,val)
+            # reset to default settings
+            self.auto_on = self.auto_on_default
+            self.avg_preprocess = self.avg_preprocess_default
+            self.used = self.used_default

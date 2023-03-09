@@ -145,8 +145,8 @@ class camera:
                         self.iWindowStatus = self.displayframe()
                     
                     self.i += 1
-                    self.j += 1
-                    if self.i == 1000:
+                    j += 1
+                    if self.i == threshold:
                         self.i = 0
             else: 
                 print("No frames received")
@@ -301,7 +301,7 @@ if __name__ == "__main__":
         camClass.getFrame(flag = True)
         time.sleep(1)
 
-    camClass.allocateBuffer(1000)
+    camClass.allocateBuffer(2500)
     camClass.initVideo(flag = False)
     input("Press Enter to continue to measurements... ")
     time.sleep(1)
