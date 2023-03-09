@@ -8,12 +8,15 @@ import argparse
 import os
 
 import ffmpeg
+from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtGui import QImage
 
 class camera:
+    changePixmap = pyqtSignal(QImage)
 
-    def __init__(self,color,args):
+    def __init__(self,args):
         if Dcamapi.init() is not False:
-            self.dcam = Dcam(0,color)
+            self.dcam = Dcam(0,DCAM_PIXELTYPE.MONO8)
             self.dcam.dev_open()
             isExist = os.path.exists(args.path)
             if not isExist:
@@ -22,18 +25,41 @@ class camera:
             self.timeout = 1000
             self.iWindowStatus = 0
             self.data = None
-            self.color = color
+            self.color = DCAM_PIXELTYPE.MONO8
             self.closeFlag = False
             self.out_process = None
             self.outName = os.path.join(args.path,"recording.avi")
             self.outNameScan = os.path.join(args.path,"recording_scan.avi")
+            self.RoiWidth = 1544
+            self.RoiHeight = 2064
             self.timesteps = np.stack((0,0), axis = -1)
             self.exposure = 25e-3
             self.fps = 40
+            self.InitSettings()
+            self.height, self.width = self.get_Dim()
+            self.stackFlag = True
+            #self.Qt = ex
+        
         else:
             print('-NG: Dcamapi.init() fails with error {}'.format(Dcamapi.lasterr()))
             Dcamapi.uninit()
             exit(0)
+
+    def startLive(self):
+        self.allocateBuffer(3)
+        print("Please, tune exposure time from the microscope")
+        self.liveImage()
+
+    def startZmeasurement(self):
+        self.allocateBuffer(1000)
+        self.initVideo(flag = True)
+        return self.getFrame(flag = True)
+
+    def startmeasurement(self):
+        self.allocateBuffer(1000)
+        self.initVideo(flag = False)
+        return self.getFrame(flag = False)
+
 
     def get_Value(self,prop):
         return self.dcam.prop_getvalue(prop)
@@ -45,9 +71,7 @@ class camera:
         return self.dcam.prop_queryvalue(prop,value)
 
     def get_Dim(self):
-        self.height = int(camClass.get_Value(DCAM_IDPROP.IMAGE_HEIGHT))
-        self.width = int(camClass.get_Value(DCAM_IDPROP.IMAGE_WIDTH))
-        return self.height,self.width
+        return int(self.get_Value(DCAM_IDPROP.IMAGE_HEIGHT)),int(self.get_Value(DCAM_IDPROP.IMAGE_WIDTH))
 
     def allocateBuffer(self,size):
         try:
@@ -81,76 +105,67 @@ class camera:
             """
     
     def saveVideo(self):
-        #print(self.data.dtype)
-        #print(self.data.min())
-        #print(self.data.max())
         self.out_process.write(self.data.astype("uint8"))
         #self.out_process.stdin.write(self.data.tobytes())
 
     def getFrame(self, flag):
         self.dcam.cap_start()
-        #prev = 0
-        j=0
+        self.j=0
         self.i = 0
         self.iWindowStatus = 1
         self.closeFlag = False
-        
         if flag:
-            print("Aqcuiring 1000 frames")
-            cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
+            print("Aqcuiring 1000 frames (25s)")
+            self.Threshold = 1000
         else:
-            cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
-            print("Aqcuiring ", int(85/(self.exposure)), "frames")
+            print("Aqcuiring ", int(85/(self.exposure)), "frames (85s)")
+            self.Threshold = int(85/(self.exposure))
         while self.iWindowStatus >= 0:
             if self.dcam.wait_capevent_frameready(self.timeout) is not False:
                 x = self.dcam.buf_getframe(self.i,self.color)
-                if (j > int(85/(self.exposure))) | (x == False) | self.closeFlag == True:
+                if (self.j > self.Threshold) | (x == False) | self.closeFlag == True:
                     if flag:
-                        cv2.destroyWindow("frame")
                         print("Z-stack ready")
                     else:
-                        cv2.destroyWindow("frame")
                         print("Measurement ready")
-                    
-                    self.closeFlag = False
                     break
                 else:
-                    frame = x[0]
                     self.data = x[1]
-                    self.timesteps = np.concatenate((self.timesteps,np.stack((frame.timestamp.sec,frame.timestamp.microsec),axis = -1)),axis = 0)
-                    #print("seconds", frame.timestamp.sec, "diff ",frame.timestamp.microsec-prev)
-                    #prev = frame.timestamp.microsec
+                    if not flag:
+                        frameStamp = x[0]
+                        self.timesteps = np.concatenate((self.timesteps,np.stack((frameStamp.timestamp.sec,frameStamp.timestamp.microsec),axis = -1)),axis = 0)
+
                     imax = np.amax(self.data)
                     if imax > 0:
                         imul = int(256 / imax)
                         self.data = self.data * imul
                     
                     self.saveVideo()
-                    if (flag == False) & (self.i%10 == 0):
-                        self.iWindowStatus = self.displayframe()
-                    elif flag == True & (self.i%10 == 0):
+                    if self.i%20 == 0:
                         self.iWindowStatus = self.displayframe()
                     
                     self.i += 1
-                    j += 1
+                    self.j += 1
                     if self.i == 1000:
                         self.i = 0
-                    #break
             else: 
                 print("No frames received")
-        #self.out_process.stdin.close()
-        #self.out_process.wait()
-        self.out_process.release()
-        np.save(os.path.join(os.path.split(self.outName)[0],"frameInfo"),self.timesteps)
-        self.stop()
+                break
 
+        self.out_process.release()
+        self.stop()
+        if not flag:
+            np.save(os.path.join(os.path.split(self.outName)[0],"frameInfo"),self.timesteps)
+            self.close()
+            return -1
+        return 1
 
     def liveImage(self):
-        cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
+        #cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
         self.dcam.cap_start()
+        
         while self.iWindowStatus >= 0:
             if self.closeFlag == True:
-                cv2.destroyWindow("frame")
                 break
             if self.dcam.wait_capevent_frameready(self.timeout) is not False:
                 self.data = self.dcam.buf_getlastframedata(self.color)
@@ -166,27 +181,17 @@ class camera:
                 else:
                     print('-NG: Dcam.wait_event() fails with error {}'.format(dcamerr))
                     break
-            """            
-            key = cv2.waitKey(1)
-            if key == ord('q') or key == ord('Q'):  # if 'q' was pressed with the live window, close it
-                self.closeFlag = True
-               break
-            """
         self.stop()
 
     def displayframe(self):
-        if self.iWindowStatus > 0 and cv2.getWindowProperty("frame", cv2.WND_PROP_VISIBLE) == 0:
-            return -1  # Window has been closed.
         if self.iWindowStatus < 0:
             return -1  # Window is already closed.
-
         if (self.data.dtype == np.uint8) | (self.data.dtype == np.uint16):
-            #cv2.imshow("frame", cv2.resize(self.data,(512,512)))
-            cv2.imshow("frame", self.data)
-            key = cv2.waitKey(1)
-            if key == ord('q') or key == ord('Q'):  # if 'q' was pressed with the live window, close it
-                self.closeFlag = True
-                key = None
+            h, w, ch = self.data.shape
+            bytesPerLine = ch * w
+            convertToQtFormat = QImage(self.data, w, h, bytesPerLine, QImage.Format.Format_RGB888)
+            p = convertToQtFormat.scaled(640, 480, Qt.AspectRatioMode.KeepAspectRatio)
+            self.changePixmap.emit(p)
             return 1
         else:
             print('-NG: dcamtest_show_image(data) only support Numpy.uint16 data')
@@ -201,18 +206,18 @@ class camera:
             #print(reply)
             if reply == False:
                 return False
-        print("inacitvate subarray",camClass.set_Value(DCAM_IDPROP.SUBARRAYMODE, 1))
+        print("inacitvate subarray",self.set_Value(DCAM_IDPROP.SUBARRAYMODE, 1))
         
         if status == True:
-            self.height = hSize
-            self.width = wsize
+            #self.height = hSize
+            #self.width = wsize
             #Then actual frame size
             for count,prop in enumerate([DCAM_IDPROP.SUBARRAYHPOS, DCAM_IDPROP.SUBARRAYHSIZE, DCAM_IDPROP.SUBARRAYVPOS, DCAM_IDPROP.SUBARRAYVSIZE]):
                 reply = self.set_Value(prop, parameterValue[count])
                 #print(reply)
                 if reply == False:
                     return False
-            print("activate subarray",camClass.set_Value(DCAM_IDPROP.SUBARRAYMODE, 2))
+            print("activate subarray",self.set_Value(DCAM_IDPROP.SUBARRAYMODE, 2))
 
 
         return True
@@ -220,9 +225,13 @@ class camera:
     def get_WH(self):
         return self.get_Value(DCAM_IDPROP.IMAGE_WIDTH), self.get_Value(DCAM_IDPROP.IMAGE_HEIGHT)
 
+    def EditCloseFlag(self):
+        self.closeFlag = True
+    
     def stop(self):
         self.dcam.cap_stop()
         self.dcam.buf_release()
+        self.closeFlag = False
 
     def close(self):
         print("closing")
@@ -249,6 +258,14 @@ class camera:
         else:
             print('-NG: Dcamapi.init() fails with error {}'.format(Dcamapi.lasterr()))
 
+    def InitSettings(self): 
+        print("Setting ROI, success ", self.set_Roi(int((2304-self.RoiWidth)/2/4)*4,int((2304-self.RoiHeight)/2/4)*4, int(self.RoiWidth/4)*4, int(self.RoiHeight/4)*4, True))
+        print("Changing readout speed, success: ", self.set_Value(DCAM_IDPROP.READOUTSPEED, DCAMPROP.READOUTSPEED.FASTEST))
+        print("Changing pixel type, success: ", self.set_Value(DCAM_IDPROP.IMAGE_PIXELTYPE, c_double(1)))
+        print("exposure time set 25s, success: ", self.set_Value(DCAM_IDPROP.EXPOSURETIME, self.exposure), "\nexposure ", self.get_Value(DCAM_IDPROP.EXPOSURETIME) )
+        print("Setting framerate to 40fps, success:", self.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, self.fps), "\nfps ", self.get_Value(DCAM_IDPROP.INTERNALFRAMERATE))
+        
+
 if __name__ == "__main__":
 
     argParser = argparse.ArgumentParser()
@@ -257,20 +274,18 @@ if __name__ == "__main__":
 
     args = argParser.parse_args()
 
-    camClass = camera(DCAM_PIXELTYPE.MONO8,args)
+    camClass = camera(args)
     print("Changing readout speed success? ", camClass.set_Value(DCAM_IDPROP.READOUTSPEED, DCAMPROP.READOUTSPEED.FASTEST))
     print("Changing pixel type success? ", camClass.set_Value(DCAM_IDPROP.IMAGE_PIXELTYPE, c_double(1)))
-    #print("Setting color to BW: ", camClass.set_Value(DCAM_IDPROP.COLORTYPE, c_double(1)))
     print("Pixel type ", camClass.get_Value(DCAM_IDPROP.IMAGE_PIXELTYPE))
+    
     #camClass.showProperties()
     print("exposure time set 25s, success: ", camClass.set_Value(DCAM_IDPROP.EXPOSURETIME, 24.99/1000), "\nexposure ", camClass.get_Value(DCAM_IDPROP.EXPOSURETIME) )
     print("Setting framerate to 40fps, success:", camClass.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, 40), camClass.get_Value(DCAM_IDPROP.INTERNALFRAMERATE))
     
     #self, hPos,vPost, hSize, wsize, status=False
     h,w = camClass.get_Dim()
-    print("Setting ROI, success ", camClass.set_Roi(int((2304-1544)/2/4)*4,int((2304-2064)/2/4)*4, int(1544/4)*4, int(2064/4)*4, True))
-    h,w = camClass.get_Dim()
-    print("WxH ", w, "x", h)
+
     
     if not args.not_stack:
         print("Allocating buffer ", camClass.allocateBuffer(3))
