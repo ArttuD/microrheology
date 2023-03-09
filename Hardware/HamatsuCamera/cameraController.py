@@ -11,6 +11,8 @@ import ffmpeg
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QImage
 
+
+
 class camera:
     changePixmap = pyqtSignal(QImage)
 
@@ -35,9 +37,13 @@ class camera:
             self.timesteps = np.stack((0,0), axis = -1)
             self.exposure = 25e-3
             self.fps = 40
+
             self.InitSettings()
+
             self.height, self.width = self.get_Dim()
-            self.stackFlag = True
+
+            self.threshold = None
+            self.mode = None
             #self.Qt = ex
         
         else:
@@ -46,18 +52,25 @@ class camera:
             exit(0)
 
     def startLive(self):
+        self.mode = 0
         self.allocateBuffer(3)
         print("Please, tune exposure time from the microscope")
         self.liveImage()
 
-    def startZmeasurement(self):
-        self.allocateBuffer(1000)
-        self.initVideo(flag = True)
+    def startZmeasurement(self, bufferSize):
+        self.mode = 1
+        self.threshold = bufferSize
+        self.allocateBuffer(self.threshold)
+        self.initVideo()
+        
         return self.getFrame(flag = True)
 
-    def startmeasurement(self):
-        self.allocateBuffer(1000)
-        self.initVideo(flag = False)
+    def startmeasurement(self, bufferSize):
+        self.mode = 2
+        self.threshold = bufferSize
+        self.allocateBuffer(self.threshold)
+        self.initVideo()
+        
         return self.getFrame(flag = False)
 
 
@@ -80,100 +93,92 @@ class camera:
         except:
             return False
 
-    def initVideo(self, flag):
-        if flag:
-            self.out_process = cv2.VideoWriter(self.outNameScan, cv2.VideoWriter_fourcc('M','J','P','G'), 10.0, (self.width,self.height), False)
-            """
-            self.out_process = (
-                ffmpeg
-                .input('pipe:', format='rawvideo',pix_fmt='gray', s='{}x{}'.format(self.width, self.height))
-                .filter('fps', fps=10, round='up')
-                .output(self.outNameScan, pix_fmt='pal8', loglevel="quiet") #gray
-                .overwrite_output()
-                .run_async(pipe_stdin=True))
-            """
+    def initVideo(self):
+        if self.flag:
+            self.out_process = cv2.VideoWriter(self.outNameScan, cv2.VideoWriter_fourcc('M','J','P','G'), 40.0, (self.width,self.height), False)
+
         else:
             self.out_process = cv2.VideoWriter(self.outName, cv2.VideoWriter_fourcc('M','J','P','G'), 40.0, (self.width,self.height), False)
-            """
-            self.out_process = (
-                ffmpeg
-                .input('pipe:', format='rawvideo',pix_fmt='gray', s='{}x{}'.format(self.width, self.height))
-                .filter('fps', fps=40, round='up')
-                .output(self.outName, pix_fmt='pal8', loglevel="quiet") #gray
-                .overwrite_output()
-                .run_async(pipe_stdin=True))
-            """
     
     def saveVideo(self):
-        self.out_process.write(self.data.astype("uint8"))
-        #self.out_process.stdin.write(self.data.tobytes())
+        self.out_process.write(self.data)
 
-    def getFrame(self, flag):
-        self.dcam.cap_start()
-        self.j=0
-        self.i = 0
-        self.iWindowStatus = 1
-        self.closeFlag = False
-        if flag:
-            print("Aqcuiring 1000 frames (25s)")
-            self.Threshold = 1000
+
+    def eventChecker(self):
+        """Return 0 if no events. Otherwise return 1 if image taken. Otherwise return 2 if buffer full"""        
+        ret = self.dcam.wait_event(DCAMWAIT_CAPEVENT.FRAMEREADY+DCAMWAIT_CAPEVENT.STOPPED+DCAMWAIT_CAPEVENT.CYCLEEND,self.timeout)
+        if not ret:
+            return 0        
         else:
-            print("Aqcuiring ", int(85/(self.exposure)), "frames (85s)")
-            self.Threshold = int(85/(self.exposure))
-        while self.iWindowStatus >= 0:
-            if self.dcam.wait_capevent_frameready(self.timeout) is not False:
-                x = self.dcam.buf_getframe(self.i,self.color)
-                if (self.j > self.Threshold) | (x == False) | self.closeFlag == True:
-                    if flag:
-                        print("Z-stack ready")
-                    else:
-                        print("Measurement ready")
-                    break
-                else:
-                    self.data = x[1]
-                    if not flag:
-                        frameStamp = x[0]
-                        self.timesteps = np.concatenate((self.timesteps,np.stack((frameStamp.timestamp.sec,frameStamp.timestamp.microsec),axis = -1)),axis = 0)
-
-                    imax = np.amax(self.data)
-                    if imax > 0:
-                        imul = int(256 / imax)
-                        self.data = self.data * imul
-                    
-                    self.saveVideo()
-                    if self.i%20 == 0:
-                        self.iWindowStatus = self.displayframe()
-                    
-                    self.i += 1
-                    j += 1
-                    if self.i == threshold:
-                        self.i = 0
-            else: 
-                print("No frames received")
-                break
-
+            return 1 if ret & DCAMWAIT_CAPEVENT.FRAMEREADY == DCAMWAIT_CAPEVENT.FRAMEREADY else 2    
+        
+    def process_image(self,x):       
+        frame = x[0]
+        self.data = x[1]
+        self.timesteps = np.concatenate((self.timesteps,np.stack((frame.timestamp.sec,frame.timestamp.microsec),axis = -1)),axis = 0)
+        
+        #print("seconds", frame.timestamp.sec, "diff ", frame.timestamp.microsec-prev)            
+        #prev = frame.timestamp.microsec            
+        
+        #imax = np.amax(self.data)
+        #if imax > 0:
+        #    imul = int(256 / imax)
+        #    self.data = self.data * imul            
+    
+        if (self.i%10 == 0):
+            iWindowStatus = self.displayframe()
+     
+        
+    def saveBuffer(self):
+        for i in range(self.threshold):
+            if i%100 == 0:
+                print("saving", i, "/", self.threshold)
+            x = self.dcam.buf_getframe(i,self.color)
+            self.saveVideo(x)
         self.out_process.release()
+    
+    def getFrame(self):
+        self.i = 0      
+        self.cameraStatus = True    
+        self.dcam.cap_start(bSequence=False)        
+           
+        if self.mode == 2:
+            print("Aqcuiring", self.threshold ,"frames")
+            cv2.namedWindow("frame", cv2.WINDOW_NORMAL) 
+        else:
+            print("Aqcuiring ", self.threshold, "frames")
+            cv2.namedWindow("frame", cv2.WINDOW_NORMAL)   
+            
+        while self.cameraStatus:
+            status = self.eventChecker()
+            if status==1:
+                self.process_image(self.dcam.buf_getframe(self.i,self.color))
+                self.i += 1                
+                # plot           
+            elif status==2:
+                # camera stopped                
+                self.cameraStatus = False
+                cv2.destroyWindow("frame")
+                print("Camera stopped imaging, saving the recorded video stream")
+            else:
+                print("No events. Something fishy going on.") 
+        
+        # save buffer        
+        self.saveBuffer()
+        np.save(os.path.join(os.path.split(self.outName)[0],"frameInfo"),self.timesteps)
         self.stop()
-        if not flag:
-            np.save(os.path.join(os.path.split(self.outName)[0],"frameInfo"),self.timesteps)
-            self.close()
-            return -1
-        return 1
+
 
     def liveImage(self):
-        #cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
+        cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
+        self.cameraStatus = True
         self.dcam.cap_start()
         
-        while self.iWindowStatus >= 0:
-            if self.closeFlag == True:
-                break
-            if self.dcam.wait_capevent_frameready(self.timeout) is not False:
+        while self.cameraStatus:
+            status = self.eventChecker()
+            if status==1:
                 self.data = self.dcam.buf_getlastframedata(self.color)
-                imax = np.amax(self.data)
-                if imax > 0:
-                    imul = int(256 / imax)
-                    self.data = self.data * imul
-                self.iWindowStatus = self.displayframe()
+                iWindowStatus = self.displayframe()
             else:
                 dcamerr = self.dcam.lasterr()
                 if dcamerr.is_timeout():
@@ -181,22 +186,23 @@ class camera:
                 else:
                     print('-NG: Dcam.wait_event() fails with error {}'.format(dcamerr))
                     break
+        
+        cv2.destroyWindow("frame")
         self.stop()
 
     def displayframe(self):
-        if self.iWindowStatus < 0:
-            return -1  # Window is already closed.
-        if (self.data.dtype == np.uint8) | (self.data.dtype == np.uint16):
-            h, w, ch = self.data.shape
-            bytesPerLine = ch * w
-            convertToQtFormat = QImage(self.data, w, h, bytesPerLine, QImage.Format.Format_RGB888)
-            p = convertToQtFormat.scaled(640, 480, Qt.AspectRatioMode.KeepAspectRatio)
-            self.changePixmap.emit(p)
-            return 1
+        if  (self.data.dtype == np.uint8) | (self.data.dtype == np.uint16):         
+            cv2.imshow("frame", self.data)
+            key = cv2.waitKey(1)
+            if key == ord('q') or key == ord('Q'):  
+                # if 'q' was pressed with the live window, close it                
+                self.cameraStatus = False                
+                key = None            
+            return 1        
         else:
             print('-NG: dcamtest_show_image(data) only support Numpy.uint16 data')
             return -1
-    
+  
     def set_Roi(self, hPos,vPost, hSize, wsize, status=False):
         parameterValue_full = np.array([0, 2304, 0, 2304])
         parameterValue = np.array([hPos, hSize, vPost, wsize])
@@ -209,9 +215,6 @@ class camera:
         print("inacitvate subarray",self.set_Value(DCAM_IDPROP.SUBARRAYMODE, 1))
         
         if status == True:
-            #self.height = hSize
-            #self.width = wsize
-            #Then actual frame size
             for count,prop in enumerate([DCAM_IDPROP.SUBARRAYHPOS, DCAM_IDPROP.SUBARRAYHSIZE, DCAM_IDPROP.SUBARRAYVPOS, DCAM_IDPROP.SUBARRAYVSIZE]):
                 reply = self.set_Value(prop, parameterValue[count])
                 #print(reply)
@@ -231,12 +234,10 @@ class camera:
     def stop(self):
         self.dcam.cap_stop()
         self.dcam.buf_release()
-        self.closeFlag = False
 
     def close(self):
         print("closing")
         time.sleep(1)
-        #self.dcam.__close_hdcamwait()
         self.dcam.dev_close()
         Dcamapi.uninit()
         print("closed")
@@ -271,41 +272,27 @@ if __name__ == "__main__":
     argParser = argparse.ArgumentParser()
     argParser.add_argument("-p", "--path", help="path and name of output video")
     argParser.add_argument("-s", "--no_stack", help="If you dont want to record and check exposure", action = "store_true")
-
     args = argParser.parse_args()
 
     camClass = camera(args)
-    print("Changing readout speed success? ", camClass.set_Value(DCAM_IDPROP.READOUTSPEED, DCAMPROP.READOUTSPEED.FASTEST))
-    print("Changing pixel type success? ", camClass.set_Value(DCAM_IDPROP.IMAGE_PIXELTYPE, c_double(1)))
-    print("Pixel type ", camClass.get_Value(DCAM_IDPROP.IMAGE_PIXELTYPE))
-    
-    #camClass.showProperties()
-    print("exposure time set 25s, success: ", camClass.set_Value(DCAM_IDPROP.EXPOSURETIME, 24.99/1000), "\nexposure ", camClass.get_Value(DCAM_IDPROP.EXPOSURETIME) )
-    print("Setting framerate to 40fps, success:", camClass.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, 40), camClass.get_Value(DCAM_IDPROP.INTERNALFRAMERATE))
     
     #self, hPos,vPost, hSize, wsize, status=False
     h,w = camClass.get_Dim()
 
     
     if not args.not_stack:
-        print("Allocating buffer ", camClass.allocateBuffer(3))
+
         print("Please, tune exposure time from the microscope and press Q to start the measurements")
         camClass.liveImage()
         time.sleep(2)
-
-        #print("exposure time set 25s, success: ", camClass.set_Value(DCAM_IDPROP.EXPOSURETIME, 24.99/1000), "\nexposure ", camClass.get_Value(DCAM_IDPROP.EXPOSURETIME) )
-        #print("Setting framerate to 40fps, success:", camClass.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, 40), camClass.get_Value(DCAM_IDPROP.INTERNALFRAMERATE))
-        camClass.allocateBuffer(1000)
-        camClass.initVideo(flag = True)
+    
         input("Press Enter to continue perform Z-scan...")
-        camClass.getFrame(flag = True)
+        camClass.startZmeasurement()
         time.sleep(1)
 
-    camClass.allocateBuffer(2500)
-    camClass.initVideo(flag = False)
     input("Press Enter to continue to measurements... ")
-    time.sleep(1)
-    camClass.getFrame(flag = False)
+    camClass.startmeasurement()
+    
     time.sleep(2)
 
     #
@@ -313,4 +300,41 @@ if __name__ == "__main__":
     
 
 
+"""
+ print("Changing readout speed success? ", camClass.set_Value(DCAM_IDPROP.READOUTSPEED, DCAMPROP.READOUTSPEED.FASTEST))
+    print("Changing pixel type success? ", camClass.set_Value(DCAM_IDPROP.IMAGE_PIXELTYPE, c_double(1)))
+    print("Pixel type ", camClass.get_Value(DCAM_IDPROP.IMAGE_PIXELTYPE))
+    
+    #camClass.showProperties()
+    print("exposure time set 25s, success: ", camClass.set_Value(DCAM_IDPROP.EXPOSURETIME, 24.99/1000), "\nexposure ", camClass.get_Value(DCAM_IDPROP.EXPOSURETIME) )
+    print("Setting framerate to 40fps, success:", camClass.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, 40), camClass.get_Value(DCAM_IDPROP.INTERNALFRAMERATE))
+    def displayframe(self):
+        if (self.data.dtype == np.uint8) | (self.data.dtype == np.uint16):
+            h, w, ch = self.data.shape
+            bytesPerLine = ch * w
+            convertToQtFormat = QImage(self.data, w, h, bytesPerLine, QImage.Format.Format_RGB888)
+            p = convertToQtFormat.scaled(640, 480, Qt.AspectRatioMode.KeepAspectRatio)
+            self.changePixmap.emit(p)
+            return 1
+        else:
+            print('-NG: dcamtest_show_image(data) only support Numpy.uint16 data')
+            return -1
+"""  
 
+"""
+        #self.out_process.stdin.write(self.data.tobytes())
+self.out_process = (
+    ffmpeg
+    .input('pipe:', format='rawvideo',pix_fmt='gray', s='{}x{}'.format(self.width, self.height))
+    .filter('fps', fps=10, round='up')
+    .output(self.outNameScan, pix_fmt='pal8', loglevel="quiet") #gray
+    .overwrite_output()
+    .run_async(pipe_stdin=True))
+self.out_process = (
+    ffmpeg
+    .input('pipe:', format='rawvideo',pix_fmt='gray', s='{}x{}'.format(self.width, self.height))
+    .filter('fps', fps=40, round='up')
+    .output(self.outName, pix_fmt='pal8', loglevel="quiet") #gray
+    .overwrite_output()
+    .run_async(pipe_stdin=True))
+"""
