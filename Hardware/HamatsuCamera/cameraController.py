@@ -8,31 +8,33 @@ import argparse
 import os
 
 import ffmpeg
-from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QImage
+#from PyQt6.QtCore import pyqtSignal, Qt
+#from PyQt6.QtGui import QImage
 
 
 
 class camera:
-    changePixmap = pyqtSignal(QImage)
+    #changePixmap = pyqtSignal(QImage)
 
     def __init__(self,args):
         if Dcamapi.init() is not False:
             self.dcam = Dcam(0,DCAM_PIXELTYPE.MONO8)
+            
             self.dcam.dev_open()
             isExist = os.path.exists(args.path)
+            
             if not isExist:
                 # Create a new directory because it does not exist
                 os.makedirs(args.path)
+            
             self.timeout = 1000
-            self.iWindowStatus = 0
             self.data = None
             self.color = DCAM_PIXELTYPE.MONO8
             self.closeFlag = False
             self.out_process = None
             self.outName = os.path.join(args.path,"recording.avi")
             self.outNameScan = os.path.join(args.path,"recording_scan.avi")
-            self.RoiWidth = 1544
+            self.RoiWidth = 2064
             self.RoiHeight = 2064
             self.timesteps = np.stack((0,0), axis = -1)
             self.exposure = 25e-3
@@ -57,21 +59,21 @@ class camera:
         print("Please, tune exposure time from the microscope")
         self.liveImage()
 
-    def startZmeasurement(self, bufferSize):
+    def startZmeasurement(self):
         self.mode = 1
-        self.threshold = bufferSize
+        self.threshold = 1000
         self.allocateBuffer(self.threshold)
         self.initVideo()
         
-        return self.getFrame(flag = True)
+        return self.getFrame()
 
-    def startmeasurement(self, bufferSize):
+    def startmeasurement(self):
         self.mode = 2
-        self.threshold = bufferSize
+        self.threshold = int(85/self.exposure)
         self.allocateBuffer(self.threshold)
         self.initVideo()
         
-        return self.getFrame(flag = False)
+        return self.getFrame()
 
 
     def get_Value(self,prop):
@@ -94,19 +96,19 @@ class camera:
             return False
 
     def initVideo(self):
-        if self.flag:
+        if self.mode == 1:
             self.out_process = cv2.VideoWriter(self.outNameScan, cv2.VideoWriter_fourcc('M','J','P','G'), 40.0, (self.width,self.height), False)
 
         else:
             self.out_process = cv2.VideoWriter(self.outName, cv2.VideoWriter_fourcc('M','J','P','G'), 40.0, (self.width,self.height), False)
     
-    def saveVideo(self):
-        self.out_process.write(self.data)
+    def saveVideo(self,x):
+        self.out_process.write(x)
 
 
     def eventChecker(self):
         """Return 0 if no events. Otherwise return 1 if image taken. Otherwise return 2 if buffer full"""        
-        ret = self.dcam.wait_event(DCAMWAIT_CAPEVENT.FRAMEREADY+DCAMWAIT_CAPEVENT.STOPPED+DCAMWAIT_CAPEVENT.CYCLEEND,self.timeout)
+        ret = self.dcam.wait_event(DCAMWAIT_CAPEVENT.FRAMEREADY + DCAMWAIT_CAPEVENT.STOPPED + DCAMWAIT_CAPEVENT.CYCLEEND,self.timeout)
         if not ret:
             return 0        
         else:
@@ -130,11 +132,14 @@ class camera:
      
         
     def saveBuffer(self):
-        for i in range(self.threshold):
+        for i in range(self.i):
             if i%100 == 0:
                 print("saving", i, "/", self.threshold)
             x = self.dcam.buf_getframe(i,self.color)
-            self.saveVideo(x)
+            if x == False:
+                break
+            else:
+                self.saveVideo(x[1])
         self.out_process.release()
     
     def getFrame(self):
@@ -158,11 +163,11 @@ class camera:
             elif status==2:
                 # camera stopped                
                 self.cameraStatus = False
-                cv2.destroyWindow("frame")
                 print("Camera stopped imaging, saving the recorded video stream")
             else:
                 print("No events. Something fishy going on.") 
         
+        cv2.destroyWindow("frame")
         # save buffer        
         self.saveBuffer()
         np.save(os.path.join(os.path.split(self.outName)[0],"frameInfo"),self.timesteps)
@@ -176,7 +181,7 @@ class camera:
         
         while self.cameraStatus:
             status = self.eventChecker()
-            if status==1:
+            if (status==1) | (status == 2):
                 self.data = self.dcam.buf_getlastframedata(self.color)
                 iWindowStatus = self.displayframe()
             else:
@@ -185,7 +190,7 @@ class camera:
                     print('===: timeout')
                 else:
                     print('-NG: Dcam.wait_event() fails with error {}'.format(dcamerr))
-                    break
+                    
         
         cv2.destroyWindow("frame")
         self.stop()
@@ -280,10 +285,10 @@ if __name__ == "__main__":
     h,w = camClass.get_Dim()
 
     
-    if not args.not_stack:
+    if not args.no_stack:
 
         print("Please, tune exposure time from the microscope and press Q to start the measurements")
-        camClass.liveImage()
+        camClass.startLive()
         time.sleep(2)
     
         input("Press Enter to continue perform Z-scan...")
