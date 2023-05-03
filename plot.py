@@ -56,6 +56,10 @@ if particle_size == "30":
     #30µm beads
     F_V = 2.6*10**5
     print("30 µm particle")
+elif particle_size == "50":
+    #50µm beads
+    F_V = 2.028*10**5
+    print("50 µm particle")    
 elif particle_size == "100" :
     #100µm beads
     F_V = 2.2*10**5
@@ -435,11 +439,11 @@ if not os.path.exists(res_path_2):
 #Save data into pd dataframe 
 
 #read ID
-day = list(map(lambda x: x[0:6],idents))
-sample = list(map(lambda x: x[6:8],idents))
-holder = list(map(lambda x: x[8:10],idents))
-location = list(map(lambda x: x[10:12],idents))
-repeat = list(map(lambda x: x[12:14],idents))
+day = list(map(lambda x: int(x[0:6]),idents))
+sample = list(map(lambda x: int(x[6:8]),idents))
+holder = list(map(lambda x: int(x[8:10]),idents))
+location = list(map(lambda x: int(x[10:12]),idents))
+repeat = list(map(lambda x: int(x[12:14]),idents))
 sample_type = list(map(lambda x: x[12:14],sample_types))
 
 all_data = []
@@ -464,7 +468,7 @@ masked_data.loc[:,'tan_phi'] = np.tan(masked_data['phi_(rad)'])
 masked_data['repeat'] = masked_data['repeat'].values.astype(int)
 
 #group and calculate mean at particle level over references and repeats
-mm = masked_data.groupby(['day','sample','holder','location','track_id']).mean()
+mm = masked_data.groupby(['day','sample','holder','location','track_id']).mean(numeric_only=True)
 mm = mm.reset_index()
 
 #plot sanity check that data is fien
