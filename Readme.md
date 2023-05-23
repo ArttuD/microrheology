@@ -159,6 +159,7 @@ Other flags include
 
 All metadata (calibration constants and pixel to um) can be found fron ```configs/default.ini```.
 
+Own configuration can be also used by adding as the first argument e.g ```python plot.py own_config.ini -p ....```.
 
 # Meta 
 
