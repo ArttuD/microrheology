@@ -14,64 +14,82 @@ from tools.util import find_plot_size
 from sklearn.metrics import mean_squared_error
 import warnings
 warnings.filterwarnings("ignore")
-from pandas.core import groupby
 import seaborn as sns
+import configparser
+import logging
+from tools.helpers.LogHelper import LogHelper
+from tools.helpers.ManualChoice import ManualChoice
 
 
 
-# %%
-#Ask path of data
+config = configparser.ConfigParser()
+config_path = sys.argv[1]
+# read specified config file?
+if config_path.endswith('.ini'):
+    c_path = os.path.join(os.getcwd(),'configs',config_path)
+    if os.path.exists(c_path):
+        config.read(c_path)
+    else:
+        raise NotADirectoryError(c_path)
+else:
+    # otherwise get the latest
+    config.read(os.path.join(os.getcwd(),'configs','default.ini'))
+
+partice_size_choises = list(config['BEADS'].keys())
+zoom_choices = list(config['PIXELS'].keys())
+
 parser = argparse.ArgumentParser(
     description="""Download results in the folder and ouputs results
                 """)
 parser.add_argument('--path','-p',required=True,
                     help='Path to folder. eg. C:/data/imgs')
-parser.add_argument('--label','-l',required=True,
+parser.add_argument('--label','-l',default='holder',
                     help='Give x-label for the plots')
 parser.add_argument('--particle_size','-s',required=True,
-                    help='Give the size of the particles (30 or 100)')
-parser.add_argument('--pixel_size',default=6.5/(0.63*20), 
-                    help='Determine pixel size. For old camera the pixel size is 3.45/20 or 3.45/(20*0.63)')
+                    choices=partice_size_choises,
+                    help='Give the size of the particles.')
+parser.add_argument('--pixel_size',required=True,
+                    choices=zoom_choices, 
+                    help='Determine pixel size.')
 parser.add_argument('--flip','-f',help='Flip sinusoids',
                     action="store_true")
+parser.add_argument('--manual','-m',help='Manually remove poor tracks',
+                    action="store_true")
+parser.add_argument('-d', '--debug',
+                    help="Print lots of debugging statements",
+                    action="store_const", dest="loglevel",
+                    const=logging.DEBUG,
+                    default=logging.WARNING)
+parser.add_argument('-v', '--verbose',help="Be verbose",
+                    action="store_const", dest="loglevel",
+                    const=logging.INFO)
 
 
 #Save arguments
-args = parser.parse_args()
+args = parser.parse_known_args()[0]
 path = args.path
 x_label =  args.label
+zoom = args.pixel_size
 particle_size =  args.particle_size
 flip = 1. if args.flip else -1.
+manual = args.manual
 
-#µm/pixel
+if manual:
+    # clear file
+    with open(os.path.join(path,'manually_dropped.csv'),'w') as drop:
+        pass
 
-#100µm Agarose measurements
-#m = 3.45/(20)
-#For hetergeneity measurements
-#m = 3.45/(20*0.63)
-m = float(args.pixel_size)
-  
-#Calibration constant
-if particle_size == "30":
-    #30µm beads
-    F_V = 2.6*10**5
-    print("30 µm particle")
-elif particle_size == "50":
-    #50µm beads
-    F_V = 2.028*10**5
-    print("50 µm particle")    
-elif particle_size == "100" :
-    #100µm beads
-    F_V = 2.2*10**5
-    print("100 µm particle")
-else :
-    #10µm beads
-    F_V = 1.8*10**5
-    print("100 µm particle")
+m = float(config['PIXELS'][zoom])
+F_V = float(config['BEADS'][particle_size])
 
-
-# use sync info
+logging_level = args.loglevel
 auto_sync = True
+
+logging.basicConfig(
+                format='%(levelname)s:%(message)s',
+                level=logging_level)
+
+logging.info(f'F_V: {F_V} pixel to um: {m}')
 
 #search files
 for fold_names in tqdm(glob('{}/2*'.format(path))):
@@ -84,8 +102,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
     track_path = os.path.join(path,'track_matched.json')
     if not os.path.exists(track_path):
         track_path = os.path.join(path,'track.json')
-    print(os.path.join(fold_names,'*'))
-    
+    logging.info(os.path.join(fold_names,'*'))
     #Current file
     current_path = [i for i in glob(os.path.join(fold_names,'*')) if '_trial_' in i][0]
     frame_info_path = os.path.join(path,'frame_info_matlab.txt')
@@ -102,7 +119,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
 
     #Check sync file
     if not auto_sync and not os.path.exists(results_info_path):
-        print("Skipping path {}".format(path))
+        logging.info("Skipping path {}".format(path))
         continue
     
     #Read check if old sync information exists
@@ -134,7 +151,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
             dif = np.diff(stamps[1].values).mean()
             for i2 in range(len(tracking_data[big_probe_indices[i]]['timestamps'])-stamps.shape[0]):
                 time_diff = stamps[1].values[-1]+dif
-                print('Appending: {0:.2f} to timestamps'.format(time_diff))
+                logging.info('Appending: {0:.2f} to timestamps'.format(time_diff))
                 stamps = stamps.append({'1':time_diff}, ignore_index=True)
 
         x = np.zeros(stamps.shape[0])
@@ -209,7 +226,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
         if os.path.exists(shift_path):
             shift = np.load(shift_path)
         else:
-            print("Sync info not found. Skipping")
+            logging.warning("Sync info not found. Skipping")
             continue
     
     # shifted time indices
@@ -259,8 +276,11 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
         plot_ind = find_plot_size(num_data)
         fig_fit,ax_fit = plt.subplots(plot_ind,plot_ind,figsize=(2*plot_ind,2*plot_ind))
         sub = 0
+        res = []
+        mask = [False]*len(disps[k])
+        # loop over all references
         for idx,i in enumerate(disps[k]):
-
+            res.append([])
             # move starting time to 0 for trackign data 
             t2 = stamps.values[:,1][d_start:d_end]
             t2 -= t2[0]
@@ -286,7 +306,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
                     guess = [np.random.uniform(0,5),np.random.uniform(0,np.pi),np.random.normal(0,1),np.random.normal(0,1)]
                 success_iter += 1
             if not success:
-                print("Fit failed after 100 retries. Quitting...")
+                logging.warning("Fit failed after 100 retries. Quitting...")
                 sys.exit(0)
             
             #Error estimates    
@@ -303,7 +323,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
                 if rad_key in list(radius_data.keys()):
                     radius_pixels = radius_data[rad_key]
                 else:
-                    print("key: {} not found in radius info".format(k))
+                    logging.warning("key: {} not found in radius info".format(k))
                     radius_pixels = radius_data[list(radius_data.keys())[0]]
             else:
                 radius_pixels = np.median(tracking_data[big_probe_indices[big_probe_loc]]['radius'])
@@ -322,7 +342,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
             else:
                 if idx !=0 and idx%plot_ind == 0:
                     sub += 1
-                if idx<=8:
+                if idx<=30:
                     ax_fit[sub,idx%plot_ind].plot(t2,sample,label='data')
                     ax_fit[sub,idx%plot_ind].plot(t2,func_disp(t2,*p2),label='fit')
                     ax_fit[sub,idx%plot_ind].set_title(r'Ref %i'%(idx))
@@ -376,7 +396,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
                         cont = False
                 if not append:
                     found = False
-                    print("not found zero crossings")
+                    logging.warning("not found zero crossings")
                     break
             
             #Compare areas to eliminate singular signals
@@ -401,8 +421,8 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
             # also drop cases phi are nonsense
             k_num = k.split('_')[-1]
             if distance<=250 and distance>=50 and p2[0] != 0 and peaks_close:
-                f.write('{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n'.format(k_num,idx,distance,cov_sum,*p2,abs_G,radius,rmse,inv_rmse,shift,*error,x_big[0],y_big[0]))
-                o_p2 = path
+                res[idx] = [k_num,idx,distance,cov_sum,*p2,abs_G,radius,rmse,inv_rmse,float(shift),*error,x_big[0],y_big[0]]
+                mask[idx] = True
                 counter += 1
             else:
                 if not peaks_close:
@@ -418,7 +438,25 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
 
         fig_fit.suptitle('Track %s'%k_num)
         file_name = os.path.join(path, 'Track_{}.jpg'.format(k_num))
-        fig_fit.savefig(file_name)
+        if manual:
+            handler = ManualChoice(fig_fit,ax_fit,mask,file_name,save=True)
+            plt.show()
+            mask_manual = handler.mask
+            handler.disconnect()
+            # save manually dropped
+            with open(os.path.join(path,'manually_dropped.csv'),'a') as drop:
+                for r,drop_m,data_m in zip(res,mask_manual,mask):
+                    if drop_m != data_m:
+                        drop.write(f'{r[0]},{r[1]}\n')
+        else:
+            fig_fit.savefig(file_name)
+        # write data to file
+        for r,to_write in zip(res,mask_manual):
+            if to_write:
+                st = ('{},'*len(r))[:-1]
+                f.write(st.format(*r))
+                f.write('\n')
+        
     f.close()
 
 ###############################

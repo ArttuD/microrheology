@@ -22,7 +22,9 @@ path = args.path
 
 
 #Initialize parameters for syncronizer
-used = False;auto_on = True; avg_preprocess = True
+used = False
+auto_on = True
+avg_preprocess = True
 
 syncr = syncronizer(path,used,auto_on,avg_preprocess)
 syncr.syncronizer()
