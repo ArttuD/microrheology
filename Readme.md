@@ -147,9 +147,10 @@ This script uses the files produced by previous scripts to find |$G^*$| and $\ph
 
 1. Run code 
   ```sh
-  python plot.py -p ".../exampleData/Agarose30um -s "particle size (30 or 100 )" -l "x label of the plots (day/concetration/current/sample/holder/location)" -pixel_size "(wide or zoom)"
+  python plot.py -p ".../exampleData/Agarose30um -s "particle size (30 or 100 )" -l "x label of the plots (day/concetration/current/sample/holder/location)" -pixel_size "(basler_wide, basler_zoom...)"
   ```
 Note: **concetration** or **current** are used in the paper
+
 
 2. When the files are processed, results of spefic measurements are saved into their own folders and a summary of results and displayed plots are saved into a "results" folder created in ``` "*/example_files folder" ``` 
 
@@ -157,7 +158,8 @@ Other flags include
 * ```--manual```: manually drop failed measurements by clicking them in the plots
 * ```--flip```: Camera might 180 rotated so sinusoids are going the wrong way
 
-All metadata (calibration constants and pixel to um) can be found fron ```configs/default.ini```.
+All metadata (calibration constants and pixel to um) can be found from ```configs/default.ini```. Command line arguments are generated 
+based on this file.
 
 Own configuration can be also used by adding as the first argument e.g ```python plot.py own_config.ini -p ....```.
 
