@@ -17,7 +17,6 @@ warnings.filterwarnings("ignore")
 import seaborn as sns
 import configparser
 import logging
-from tools.helpers.LogHelper import LogHelper
 from tools.helpers.ManualChoice import ManualChoice
 
 
