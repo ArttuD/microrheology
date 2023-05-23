@@ -89,6 +89,7 @@ logging.basicConfig(
                 level=logging_level)
 
 logging.info(f'F_V: {F_V} pixel to um: {m}')
+logging.info(f'Label: {x_label}')
 
 #search files
 for fold_names in tqdm(glob('{}/2*'.format(path))):
