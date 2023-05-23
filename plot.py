@@ -448,10 +448,11 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
                 for r,drop_m,data_m in zip(res,mask_manual,mask):
                     if drop_m != data_m:
                         drop.write(f'{r[0]},{r[1]}\n')
+            mask = mask_manual
         else:
             fig_fit.savefig(file_name)
         # write data to file
-        for r,to_write in zip(res,mask_manual):
+        for r,to_write in zip(res,mask):
             if to_write:
                 st = ('{},'*len(r))[:-1]
                 f.write(st.format(*r))
