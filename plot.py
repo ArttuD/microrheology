@@ -341,7 +341,8 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
             else:
                 if idx !=0 and idx%plot_ind == 0:
                     sub += 1
-                if idx<=30:
+                # limit plot drawing
+                if idx<=60:
                     ax_fit[sub,idx%plot_ind].plot(t2,sample,label='data')
                     ax_fit[sub,idx%plot_ind].plot(t2,func_disp(t2,*p2),label='fit')
                     ax_fit[sub,idx%plot_ind].set_title(r'Ref %i'%(idx))
