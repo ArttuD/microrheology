@@ -1,8 +1,12 @@
 import os
+import numpy as np
 class ManualChoice:
     def __init__(self,figure,axes,mask,out_path,save=False):
         self.figure = figure
-        self.axes = axes.ravel()
+        if isinstance(axes,np.ndarray):
+            self.axes = axes.ravel()
+        else:
+            self.axes = [axes]
         self.out_path = out_path
         self.save = save
         self.cid = self.figure.canvas.mpl_connect('button_press_event', self)
