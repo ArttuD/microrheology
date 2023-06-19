@@ -81,7 +81,7 @@ cv2.namedWindow('win',cv2.WINDOW_NORMAL)
 def click_events(event, x, y, flags, param):
     #Get x,y and draw boxes
     global refPt, image, to_remove
-    if event == cv2.EVENT_RBUTTONDBLCLK:
+    if (event == cv2.EVENT_RBUTTONDBLCLK) or (event == cv2.EVENT_MBUTTONDOWN):
         to_remove = [(x,y)]
     elif event == cv2.EVENT_LBUTTONDOWN:
         refPt = [(x, y)]
