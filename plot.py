@@ -247,8 +247,8 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
     t = t.astype(np.float32)
 
     # bounds for curve fitting
-    bounds = [[0,0,-np.inf,-np.inf],[np.inf,np.pi/2,np.inf,np.inf]]
-    bounds_d = [[0,-1/40*(0.05*(2*np.pi)),-np.inf,-np.inf],[np.inf,np.pi/2+1/40*(0.05*(2*np.pi)),np.inf,np.inf]]
+    bounds = [[-np.inf,0,-np.inf,-np.inf],[np.inf,np.pi/2,np.inf,np.inf]]
+    bounds_d = [[-np.inf,-1/40*(0.05*(2*np.pi)),-np.inf,-np.inf],[np.inf,np.pi/2+1/40*(0.05*(2*np.pi)),np.inf,np.inf]]
     I_guess_c = [1.2,0.01,0.01,0.01]
     I_guess_d = [0.25,0.001,0.01,0.01]
 
@@ -303,7 +303,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
                     p2, pcov2 = curve_fit(func_disp,t2,sample,p0=guess,bounds=bounds_d,method='dogbox',maxfev = 1000000)
                     success = True
                 except:
-                    guess = [np.random.uniform(0,5),np.random.uniform(0,np.pi),np.random.normal(0,1),np.random.normal(0,1)]
+                    guess = [np.random.uniform(-5,5),np.random.uniform(0,np.pi),np.random.normal(0,1),np.random.normal(0,1)]
                 success_iter += 1
             if not success:
                 logging.warning("Fit failed after 100 retries. Quitting...")
@@ -331,7 +331,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
             radius = radius_pixels*m*10**-6
             
             #Calculate Stiffness
-            abs_G = F_V*(4/3*np.pi*(radius)**3)/(3*np.pi*2*radius*p2[0]*10**-6)
+            abs_G = np.abs(F_V*(4/3*np.pi*(radius)**3)/(3*np.pi*2*radius*p2[0]*10**-6))
 
 
             #Visualize
