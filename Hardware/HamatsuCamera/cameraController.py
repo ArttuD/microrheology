@@ -18,9 +18,9 @@ class camera:
 
     def __init__(self,args):
         if Dcamapi.init() is not False:
-            self.dcam = Dcam(0,DCAM_PIXELTYPE.MONO8)
-            
+            self.dcam = Dcam(0,DCAM_PIXELTYPE.MONO16)
             self.dcam.dev_open()
+
             isExist = os.path.exists(args.path)
             
             if not isExist:
@@ -29,7 +29,9 @@ class camera:
             
             self.timeout = 1000
             self.data = None
-            self.color = DCAM_PIXELTYPE.MONO8
+            #self.color = DCAM_PIXELTYPE.MONO8
+            self.color = DCAM_PIXELTYPE.MONO16#self.get_Value(DCAM_IDPROP.IMAGE_PIXELTYPE)
+            print("Changing pixel type, success: ", self.color )
             self.closeFlag = False
             self.out_process = None
             self.outName = os.path.join(args.path,"recording.avi")
@@ -37,12 +39,13 @@ class camera:
             self.RoiWidth = 2064
             self.RoiHeight = 2064
             self.timesteps = np.stack((0,0), axis = -1)
-            self.exposure = 25e-3
+            self.exposure = 25e-3#25e-3
             self.fps = 40
 
             self.InitSettings()
 
             self.height, self.width = self.get_Dim()
+            print("Height: ", self.height, "\nWidth: ", self.width)
 
             self.threshold = None
             self.mode = None
@@ -70,7 +73,9 @@ class camera:
     def startmeasurement(self):
         self.mode = 2
         self.threshold = int(85/self.exposure)
-        self.allocateBuffer(self.threshold)
+        self.threshold = 3225
+        print(self.threshold)
+        res = self.allocateBuffer(self.threshold)
         self.initVideo()
         
         return self.getFrame()
@@ -90,9 +95,11 @@ class camera:
 
     def allocateBuffer(self,size):
         try:
-            self.dcam.buf_alloc(size)
+            ret = self.dcam.buf_alloc(size)
+            print(ret)
             return True
         except:
+            print("Failed to allocate space!")
             return False
 
     def initVideo(self):
@@ -103,6 +110,7 @@ class camera:
             self.out_process = cv2.VideoWriter(self.outName, cv2.VideoWriter_fourcc('M','J','P','G'), 40.0, (self.width,self.height), False)
     
     def saveVideo(self,x):
+        x = (x/256).astype("uint8")
         self.out_process.write(x)
 
 
@@ -114,21 +122,24 @@ class camera:
         else:
             return 1 if ret & DCAMWAIT_CAPEVENT.FRAMEREADY == DCAMWAIT_CAPEVENT.FRAMEREADY else 2    
         
-    def process_image(self,x):       
-        frame = x[0]
-        self.data = x[1]
-        self.timesteps = np.concatenate((self.timesteps,np.stack((frame.timestamp.sec,frame.timestamp.microsec),axis = -1)),axis = 0)
+    def process_image(self,x):
+        if type(x) == bool:
+            pass
+        else:       
+            frame = x[0]
+            self.data = x[1]
+            self.timesteps = np.concatenate((self.timesteps,np.stack((frame.timestamp.sec,frame.timestamp.microsec),axis = -1)),axis = 0)
+            
+            #print("seconds", frame.timestamp.sec, "diff ", frame.timestamp.microsec-prev)            
+            #prev = frame.timestamp.microsec            
+            
+            #imax = np.amax(self.data)
+            #if imax > 0:
+            #    imul = int(256 / imax)
+            #    self.data = self.data * imul            
         
-        #print("seconds", frame.timestamp.sec, "diff ", frame.timestamp.microsec-prev)            
-        #prev = frame.timestamp.microsec            
-        
-        #imax = np.amax(self.data)
-        #if imax > 0:
-        #    imul = int(256 / imax)
-        #    self.data = self.data * imul            
-    
-        if (self.i%10 == 0):
-            iWindowStatus = self.displayframe()
+            if (self.i%10 == 0):
+                iWindowStatus = self.displayframe()
      
         
     def saveBuffer(self):
@@ -156,6 +167,7 @@ class camera:
             
         while self.cameraStatus:
             status = self.eventChecker()
+            #print("Status: ", status)
             if status==1:
                 self.process_image(self.dcam.buf_getframe(self.i,self.color))
                 self.i += 1                
@@ -168,8 +180,10 @@ class camera:
                 print("No events. Something fishy going on.") 
         
         cv2.destroyWindow("frame")
+        
         # save buffer        
         self.saveBuffer()
+        #print("saving done, releaseing buffer")
         np.save(os.path.join(os.path.split(self.outName)[0],"frameInfo"),self.timesteps)
         self.stop()
 
@@ -265,9 +279,13 @@ class camera:
             print('-NG: Dcamapi.init() fails with error {}'.format(Dcamapi.lasterr()))
 
     def InitSettings(self): 
-        print("Setting ROI, success ", self.set_Roi(int((2304-self.RoiWidth)/2/4)*4,int((2304-self.RoiHeight)/2/4)*4, int(self.RoiWidth/4)*4, int(self.RoiHeight/4)*4, True))
+        #print("Setting ROI, success ", self.set_Roi(int((2304-self.RoiWidth)/2/4)*4,int((2304-self.RoiHeight)/2/4)*4, int(self.RoiWidth/4)*4, int(self.RoiHeight/4)*4, True))
         print("Changing readout speed, success: ", self.set_Value(DCAM_IDPROP.READOUTSPEED, DCAMPROP.READOUTSPEED.FASTEST))
-        print("Changing pixel type, success: ", self.set_Value(DCAM_IDPROP.IMAGE_PIXELTYPE, c_double(1)))
+        #print("Changing pixel type, success: ", self.set_Value(DCAM_IDPROP.IMAGE_PIXELTYPE, c_double(1)))
+        print("pixel type: ", self.set_Value(DCAM_IDPROP.IMAGE_PIXELTYPE, 2))
+        print("Color type: ", self.set_Value(DCAM_IDPROP.COLORTYPE, DCAMPROP.COLORTYPE.BW))
+        print("Bits per channel: ", self.set_Value(DCAM_IDPROP.BITSPERCHANNEL, DCAMPROP.BITSPERCHANNEL._16))
+
         print("exposure time set 25s, success: ", self.set_Value(DCAM_IDPROP.EXPOSURETIME, self.exposure), "\nexposure ", self.get_Value(DCAM_IDPROP.EXPOSURETIME) )
         print("Setting framerate to 40fps, success:", self.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, self.fps), "\nfps ", self.get_Value(DCAM_IDPROP.INTERNALFRAMERATE))
         
@@ -283,22 +301,23 @@ if __name__ == "__main__":
     
     #self, hPos,vPost, hSize, wsize, status=False
     h,w = camClass.get_Dim()
-
+    #camClass.showProperties()
+    #exit(0)
     
     if not args.no_stack:
 
         print("Please, tune exposure time from the microscope and press Q to start the measurements")
         camClass.startLive()
-        time.sleep(2)
+        time.sleep(3)
     
         input("Press Enter to continue perform Z-scan...")
         camClass.startZmeasurement()
-        time.sleep(1)
+        time.sleep(3)
 
     input("Press Enter to continue to measurements... ")
     camClass.startmeasurement()
     
-    time.sleep(2)
+    time.sleep(5)
 
     #
     camClass.close()
