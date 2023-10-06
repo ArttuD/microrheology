@@ -1,13 +1,14 @@
 
 
 from dcam import *
-from dcamapi4 import DCAMERR, DCAM_PIXELTYPE, DCAM_IDPROP, DCAM_PROP, DCAMPROP
-import sys
-import cv2 
+from dcamapi4 import DCAM_PIXELTYPE, DCAM_IDPROP, DCAMPROP
 import numpy as np
 import time
 import argparse
 import os
+import datetime
+
+import ffmpeg
 
 from PyQt6.QtCore import Qt, pyqtSignal,QThread
 from PyQt6.QtGui import QImage
@@ -94,13 +95,17 @@ class Hamamatsu_spark(QThread, Thread):
         while True:
             if (self.saving_que.empty() == False):
                 frame = self.saving_que.get()
-                out.write(np.stack((frame.astype("uint8"),frame.astype("uint8"),frame.astype("uint8")), axis = -1))
+                frame = np.stack((frame.astype("uint8"),frame.astype("uint8"),frame.astype("uint8")), axis = -1)
+                #out.write()
+                out.stdin.write(frame)
             else:
                 if not event_saver.is_set():
                     time.sleep(0.01)
                 else:
                     break
-        out.release()
+        #out.release()
+        out.stdin.close()
+        out.wait()
         return 1
 
     def record_measurement(self):
@@ -129,13 +134,30 @@ class Hamamatsu_spark(QThread, Thread):
             return False
 
     def initVideo(self):
+        
+
         if self.mode == 1:
-            self.out_process = cv2.VideoWriter(self.outNameScan, cv2.VideoWriter_fourcc('M','J','P','G'), 40.0, (self.width,self.height), False)
-
+            #self.out_process = cv2.VideoWriter(self.outNameScan, cv2.VideoWriter_fourcc('M','J','P','G'), 40.0, (self.width,self.height), False)
+            out_name = os.path.join(self.path,'measurement_scan_{}.mp4'.format(datetime.date.today()))
+            out = ( 
+                ffmpeg 
+            .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'
+            .format(self.width, self.height)) 
+            .output(out_name, pix_fmt='yuv420p') .overwrite_output() 
+            .run_async(pipe_stdin=True) 
+            )
         else:
-            self.out_process = cv2.VideoWriter(self.outName, cv2.VideoWriter_fourcc('M','J','P','G'), 40.0, (self.width,self.height), False)
+            #self.out_process = cv2.VideoWriter(self.outName, cv2.VideoWriter_fourcc('M','J','P','G'), 40.0, (self.width,self.height), False)
+            out_name = os.path.join(self.path,'measurement_{}.mp4'.format(datetime.date.today()))
+            out = ( 
+                ffmpeg 
+            .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'
+            .format(self.width, self.height)) 
+            .output(out_name, pix_fmt='yuv420p') .overwrite_output() 
+            .run_async(pipe_stdin=True) 
+            )
 
-        return self.out_process
+        return out
 
     def saveVideo(self,x):
         self.out_process.write(x)
