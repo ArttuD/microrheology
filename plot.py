@@ -421,7 +421,7 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
             # dont save if distance between reference and big probe is too high, and peak areas are not equal
             # also drop cases phi are nonsense
             k_num = k.split('_')[-1]
-            if distance<=250 and distance>=50 and p2[0] != 0 and peaks_close:
+            if distance<=250 and distance>=50 and p2[0] > 0 and peaks_close:
                 res[idx] = [k_num,idx,distance,cov_sum,*p2,abs_G,radius,rmse,inv_rmse,float(shift),*error,x_big[0],y_big[0]]
                 mask[idx] = True
                 counter += 1
@@ -503,8 +503,8 @@ data = pd.concat(all_data)
 masked_data = data
 
 #calculate phi in deg and loss tangent
-masked_data['phi_(deg)']=np.rad2deg(masked_data['phi_(rad)'])
-masked_data.loc[:,'tan_phi'] = np.tan(masked_data['phi_(rad)'])
+masked_data['phi_(deg)']=np.rad2deg(masked_data['phi_(rad)'].astype(np.float64))
+masked_data.loc[:,'tan_phi'] = np.tan(masked_data['phi_(rad)'].astype(np.float64))
 masked_data['repeat'] = masked_data['repeat'].values.astype(int)
 
 #group and calculate mean at particle level over references and repeats
