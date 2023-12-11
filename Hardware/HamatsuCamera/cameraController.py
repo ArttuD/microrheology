@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import time
 import argparse
+import sys
 import os
 
 import ffmpeg
@@ -65,7 +66,11 @@ class camera:
     def startZmeasurement(self):
         self.mode = 1
         self.threshold = 1000
-        self.allocateBuffer(self.threshold)
+        worked = self.allocateBuffer(self.threshold)
+        if worked == False:
+            print("cannot allocate memory, delete stuff or contact Arttu :)")
+            self.close()
+            sys.exit()
         self.initVideo()
         
         return self.getFrame()
@@ -74,8 +79,11 @@ class camera:
         self.mode = 2
         self.threshold = int(85/self.exposure)
         self.threshold = 3225
-        print(self.threshold)
-        res = self.allocateBuffer(self.threshold)
+        worked = self.allocateBuffer(self.threshold)
+        if worked == False:
+            print("cannot allocate memory, delete stuff or contact Arttu :)")
+            self.close()
+            sys.exit()
         self.initVideo()
         
         return self.getFrame()
@@ -96,7 +104,7 @@ class camera:
     def allocateBuffer(self,size):
         try:
             ret = self.dcam.buf_alloc(size)
-            print(ret)
+            print("buffer allocation", ret)
             return True
         except:
             print("Failed to allocate space!")
@@ -129,25 +137,18 @@ class camera:
             frame = x[0]
             self.data = x[1]
             self.timesteps = np.concatenate((self.timesteps,np.stack((frame.timestamp.sec,frame.timestamp.microsec),axis = -1)),axis = 0)
-            
-            #print("seconds", frame.timestamp.sec, "diff ", frame.timestamp.microsec-prev)            
-            #prev = frame.timestamp.microsec            
-            
-            #imax = np.amax(self.data)
-            #if imax > 0:
-            #    imul = int(256 / imax)
-            #    self.data = self.data * imul            
         
             if (self.i%10 == 0):
                 iWindowStatus = self.displayframe()
      
         
     def saveBuffer(self):
-        for i in range(self.i):
+        for i in range(self.threshold):
             if i%100 == 0:
                 print("saving", i, "/", self.threshold)
             x = self.dcam.buf_getframe(i,self.color)
             if x == False:
+                print("saved ", i, "/", self.i, "images")
                 break
             else:
                 self.saveVideo(x[1])
@@ -167,6 +168,7 @@ class camera:
             
         while self.cameraStatus:
             status = self.eventChecker()
+            
             #print("Status: ", status)
             if status==1:
                 self.process_image(self.dcam.buf_getframe(self.i,self.color))
@@ -177,15 +179,21 @@ class camera:
                 self.cameraStatus = False
                 print("Camera stopped imaging, saving the recorded video stream")
             else:
-                print("No events. Something fishy going on.") 
-        
-        cv2.destroyWindow("frame")
-        
-        # save buffer        
-        self.saveBuffer()
-        #print("saving done, releaseing buffer")
-        np.save(os.path.join(os.path.split(self.outName)[0],"frameInfo"),self.timesteps)
-        self.stop()
+                print(status)
+                print("No events. Something fishy going on.", self.dcam.lasterr()) 
+                self.cameraStatus = False
+
+        try:
+            cv2.destroyWindow("frame")
+            self.saveBuffer()
+            #print("saving done, releaseing buffer")
+            np.save(os.path.join(os.path.split(self.outName)[0],"frameInfo"),self.timesteps)
+            self.stop()
+        except:
+            print("Lag existing")
+            self.stop()
+            self.close()
+            sys.exit()
 
 
     def liveImage(self):
@@ -317,7 +325,7 @@ if __name__ == "__main__":
     input("Press Enter to continue to measurements... ")
     camClass.startmeasurement()
     
-    time.sleep(5)
+    time.sleep(3)
 
     #
     camClass.close()
