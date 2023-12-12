@@ -498,6 +498,8 @@ for idx,p in enumerate(result_paths):
     all_data.append(single)
 
 data = pd.concat(all_data)
+data['phi_(rad)'] = data['phi_(rad)'].astype(np.float64) 
+data['G_abs'] = data['G_abs'].astype(np.float64) 
 
 #Previous versions masked data to filter out noise
 masked_data = data
