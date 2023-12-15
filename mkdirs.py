@@ -50,8 +50,8 @@ for i in range(n):
         print(f'--- {f_path}')
         os.mkdir(f_path)
     # move stuff to folder
-    move(imgs,i,args.step,f_path)
-    move(fluor,i,args.step,f_path)
+    move(imgs,i,int(args.step),f_path)
+    move(fluor,i,int(args.step),f_path)
     move(video,i,2,f_path)
 
 
