@@ -62,8 +62,9 @@ diffs[pd.isna(diffs)] = diffs.median()
 trials['group'] = (diffs.abs()>10).cumsum()
 print('trial')
 for i,(index,trial) in enumerate(trials.groupby('group')):
-    f_path = os.path.join(path,'{}0101{:02d}01_t'.format(args.date,i+1),'23_trial_.csv')
-    if os.path.exists(f_path):
+    up_path = os.path.join(path,'{}0101{:02d}01_t'.format(args.date,i+1))
+    f_path = os.path.join(up_path,'23_trial_.csv')
+    if os.path.exists(up_path):
         print(f_path)
         trial.iloc[:,[2,3,0,0,0,0,4,5,6]].to_csv(f_path,sep='\t',header=False,index=False)
 
