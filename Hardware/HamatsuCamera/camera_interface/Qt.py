@@ -3,8 +3,8 @@ from PyQt6.QtCore import Qt, pyqtSlot
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import QImage, QPixmap
 
-from pyqtgraph import PlotWidget, plot
-import pyqtgraph as pg
+import multiprocessing as mp
+
 import sys
 import numpy as np
 import cv2
@@ -13,8 +13,7 @@ import threading
 import os
 from queue import Queue
 
-
-from hamamatsu import Hamamatsu_spark
+from Camera import camera
 
 class App(QWidget):
 
@@ -30,12 +29,10 @@ class App(QWidget):
         self.width = 900; self.height = 900
 
         #Flags
-        self.live_flag = False
-        self.stack_flag = False
-        self.start_flag = False
+        self.process_flag = False
 
         #Init driver and signal pipe
-        self.cam = Hamamatsu_spark(self.event_cam, self.args)
+        self.cam = camera(self.event_cam, self.args)
         self.cam.changePixmap.connect(self.setImage)
         self.cam.print_str.connect(self.receive_cam_str)
 
@@ -99,7 +96,7 @@ class App(QWidget):
 
     def set_black_screen(self):
 
-        background = np.zeros((1536, 2048))
+        background = np.zeros((2048, 2048))
         h, w = background.shape
         bytesPerLine = 1 * w
         convertToQtFormat = QImage(background,w, h, bytesPerLine, QImage.Format.Format_Grayscale8)
@@ -178,11 +175,14 @@ class App(QWidget):
         Start camera stream
         *** No problems
         """
-        self.live_flag = True
+        print("Please, brightness and find sample")
+        self.process_flag = True
         self.streamBtn.setStyleSheet("background-color : white")
+        self.process_event = mp.Event()
+
+        self.process = mp.Process(target= self.cam.startLive, args=(self.process_event))
+        self.process.start()
         
-        self.cameraThread = threading.Thread(target=self.cam.livestream)
-        self.cameraThread.start()
 
 
     def z_stack(self):
@@ -192,16 +192,15 @@ class App(QWidget):
         ***Problems
         * Autotune, not tested!
         """
-        self.printLabel.setText("Z -stack started")
-        self.stack_flag = True
-
-        self.createAndCheckFolder(self.textField.toPlainText())
-        self.cam.root = self.textField.toPlainText()
-
-        self.cameraThread = threading.Thread(target=self.cam.record_stack)
-        self.cameraThread.start()
-
+        path = self.textField.toPlainText()
         self.stackBtn.setStyleSheet("background-color : white")
+
+        self.printLabel.setText("Z -stack started")
+        self.process_flag = True
+        self.createAndCheckFolder(path)
+        self.process_event = mp.Event()
+        self.process = mp.Process(target= self.cam.startZ, args=(self.process_event, path))
+        self.process.start()
 
     def start(self):
         """
@@ -209,17 +208,15 @@ class App(QWidget):
             -Fetch path
             -start current driver and camera
         """
+        path = self.textField.toPlainText()
+        self.stackBtn.setStyleSheet("background-color : white")
+
         self.printLabel.setText("Measurement started")
-        self.Meas_flag = True
-
-        self.createAndCheckFolder(self.textField.toPlainText())
-        self.cam.path = self.textField.toPlainText()
-
-        
-        self.cameraThread = threading.Thread(target=self.cam.record_measurement)
-        self.cameraThread.start()
-        
-        self.btnStart.setStyleSheet("background-color : white")
+        self.process_flag = True
+        self.createAndCheckFolder(path)
+        self.process_event = mp.Event()
+        self.process = mp.Process(target= self.cam.start, args=(self.process_event, path))
+        self.process.start()
         
 
     def stop(self):
@@ -227,53 +224,23 @@ class App(QWidget):
         Stop tuning, measurement or camera stream and reset Gui
         """
         self.btnStop.setStyleSheet("background-color : white")
-
-        if self.live_flag:
-            self.streamBtn.setStyleSheet("background-color : green")
-
-            if self.cameraThread.is_alive():
-                #Stop driver
-                self.event_cam.set()
+        if self.process_flag:
+            if self.process.is_alive():
+                self.process_event.set()
             
-            self.cameraThread.join()
-            #reset
-            self.live_flag = False
-            self.event_cam.clear()
-
-        elif self.stack_flag:
-            self.stackBtn.setStyleSheet("background-color : green")  
-            #Close streaming camera
-            self.event_cam.set()
-            self.cameraThread.join()
-
-            time.sleep(1)
+            self.process.join()
+            self.process_event.clear()
             
-            #reset
             self.set_black_screen()
-            self.stack_flag = False
-
-            self.event_cam.clear()
-
-        elif self.Meas_flag:
-            self.btnStart.setStyleSheet("background-color : green")
-
-            #Stop camera and current driver
-
-            if self.cameraThread.is_alive():
-                self.event_cam.set()
-            
-            self.cameraThread.join()
-
-            self.event_cam.clear()
-            self.Meas_flag = False
         else:
-            self.printLabel.setText("Nothing is running!")
+            print("nothing running is running")
 
-        time.sleep(1)
-
-        #reset
+        self.streamBtn.setStyleSheet("background-color : green")
+        self.stackBtn.setStyleSheet("background-color : green")  
+        self.btnStart.setStyleSheet("background-color : green")
         self.btnStop.setStyleSheet("background-color : red")
-        self.printLabel.setText("Ready to rock!!")
+
+        self.printLabel.setText("Ready for the new round!\nPlease remember change the path")
     
     def shutDown(self):
         """
