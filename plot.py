@@ -54,6 +54,8 @@ parser.add_argument('--flip','-f',help='Flip sinusoids',
                     action="store_true")
 parser.add_argument('--manual','-m',help='Manually remove poor tracks',
                     action="store_true")
+parser.add_argument('--timelapse',help='Change sinusoid timestamps',
+                    action="store_true")
 parser.add_argument('-d', '--debug',
                     help="Print lots of debugging statements",
                     action="store_const", dest="loglevel",
@@ -72,11 +74,7 @@ zoom = args.pixel_size
 particle_size =  args.particle_size
 flip = 1. if args.flip else -1.
 manual = args.manual
-
-if manual:
-    # clear file
-    with open(os.path.join(path,'manually_dropped.csv'),'w') as drop:
-        pass
+timelapse = args.timelapse
 
 m = float(config['PIXELS'][zoom])
 F_V = float(config['BEADS'][particle_size])
@@ -231,11 +229,13 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
     
     # shifted time indices
     # currently hardcoded based on current sequence
-    c_start = np.where(current.values[:,-1]>40)[0][0]
-    c_end = np.where(current.values[:,-1]<70)[0][-1]
+    s_time = 20 if timelapse else 40
+    e_time = 50 if timelapse else 70
+    c_start = np.where(current.values[:,-1]>s_time)[0][0]
+    c_end = np.where(current.values[:,-1]<e_time)[0][-1]
     
-    d_start = np.where(stamps.values[:,1]>(40+shift))[0][0]
-    d_end = np.where(stamps.values[:,1]<(70+shift))[0][-1]
+    d_start = np.where(stamps.values[:,1]>(s_time+shift))[0][0]
+    d_end = np.where(stamps.values[:,1]<(e_time+shift))[0][-1]
 
     # function to fit current
     def func(x,a,phi0,c,d):
@@ -498,6 +498,8 @@ for idx,p in enumerate(result_paths):
     all_data.append(single)
 
 data = pd.concat(all_data)
+data['phi_(rad)'] = data['phi_(rad)'].astype(np.float64) 
+data['G_abs'] = data['G_abs'].astype(np.float64) 
 
 #Previous versions masked data to filter out noise
 masked_data = data
