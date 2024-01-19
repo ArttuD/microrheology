@@ -1,5 +1,6 @@
 from PyQt6 import QtWidgets, QtCore, QtGui
-from PyQt6.QtCore import Qt, pyqtSlot
+from PyQt6.QtCore import Qt, pyqtSlot, pyqtSignal
+
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import QImage, QPixmap
 
@@ -16,6 +17,8 @@ from queue import Queue
 from Camera import camera
 
 class App(QWidget):
+
+    process_signal = pyqtSignal(int) 
 
     def __init__(self, args):
         super().__init__()
@@ -35,6 +38,7 @@ class App(QWidget):
         self.cam = camera(self.event_cam, self.args)
         self.cam.changePixmap.connect(self.setImage)
         self.cam.print_str.connect(self.receive_cam_str)
+        self.process_signal.connect(self.cam.close_event)
 
         #cfg GUI
         self.initUI()
@@ -176,12 +180,23 @@ class App(QWidget):
         *** No problems
         """
         print("Please, brightness and find sample")
+
         self.process_flag = True
         self.streamBtn.setStyleSheet("background-color : white")
-        self.process_event = mp.Event()
 
-        self.process = mp.Process(target= self.cam.startLive, args=(self.process_event))
+        ret = self.cam.allocateBuffer(3)
+
+        print("Allocation", ret)
+        if ret == False:
+            sys.exit(1)
+        self.process = QtCore.QThread()
+        self.cam.moveToThread(self.process)
+
+        self.process.started.connect(self.cam.startLive) 
         self.process.start()
+
+        #self.process = mp.apply_async(target= self.cam.startLive, args=(self.process_event,))
+        #self.process.start()
         
 
 
@@ -192,14 +207,18 @@ class App(QWidget):
         ***Problems
         * Autotune, not tested!
         """
-        path = self.textField.toPlainText()
+
+        self.createAndCheckFolder(self.textField.toPlainText())
+        self.cam.path = self.textField.toPlainText()
         self.stackBtn.setStyleSheet("background-color : white")
 
         self.printLabel.setText("Z -stack started")
         self.process_flag = True
-        self.createAndCheckFolder(path)
-        self.process_event = mp.Event()
-        self.process = mp.Process(target= self.cam.startZ, args=(self.process_event, path))
+
+
+        self.process = QtCore.QThread()
+        self.cam.moveToThread(self.process)
+        self.process.started.connect(self.cam.startZ) 
         self.process.start()
 
     def start(self):
@@ -208,14 +227,18 @@ class App(QWidget):
             -Fetch path
             -start current driver and camera
         """
-        path = self.textField.toPlainText()
-        self.stackBtn.setStyleSheet("background-color : white")
 
+        self.createAndCheckFolder(self.textField.toPlainText())
+        self.cam.path = self.textField.toPlainText()
+
+        self.stackBtn.setStyleSheet("background-color : white")
         self.printLabel.setText("Measurement started")
+
         self.process_flag = True
-        self.createAndCheckFolder(path)
-        self.process_event = mp.Event()
-        self.process = mp.Process(target= self.cam.start, args=(self.process_event, path))
+
+        self.process = QtCore.QThread()
+        self.cam.moveToThread(self.process)
+        self.process.started.connect(self.cam.start) 
         self.process.start()
         
 
@@ -223,13 +246,19 @@ class App(QWidget):
         """
         Stop tuning, measurement or camera stream and reset Gui
         """
+        #print("setting event")
+        #self.process_signal.emit(1)
         self.btnStop.setStyleSheet("background-color : white")
         if self.process_flag:
-            if self.process.is_alive():
-                self.process_event.set()
+            self.printLabel.setText("{}".format(self.process.isFinished()))
+            if self.process.isFinished() == False:
+                self.process_signal.emit(1)
+                self.process.wait()
+            else:
+                
+                print("process done")
             
-            self.process.join()
-            self.process_event.clear()
+            
             
             self.set_black_screen()
         else:
@@ -239,6 +268,7 @@ class App(QWidget):
         self.stackBtn.setStyleSheet("background-color : green")  
         self.btnStart.setStyleSheet("background-color : green")
         self.btnStop.setStyleSheet("background-color : red")
+        self.process_flag = False
 
         self.printLabel.setText("Ready for the new round!\nPlease remember change the path")
     
@@ -255,13 +285,12 @@ class App(QWidget):
         """
         Image signal pipe
         """
-        self.receivedFrame = image
-
-        if (self.liveFlag == False) & (self.trackFlag == True) & (self.snapFlag == False):
-
-            self.drawRectangle(QPixmap(QPixmap.fromImage(self.receivedFrame)))
-        else:
-            self.label.setPixmap(QPixmap(QPixmap.fromImage(self.receivedFrame)))
+        #print(image.shape, image.min(), image.max())
+        #h, w = image.shape
+        #bytesPerLine = 1 * w
+        #convertToQtFormat = QImage(image,w, h, bytesPerLine, QImage.Format.Format_Grayscale8)
+        p = image.scaled(720, 720) #Qt.AspectRatioMode.KeepAspectRatio
+        self.label.setPixmap(QPixmap(QPixmap.fromImage(p)))
 
     @pyqtSlot(str)
     def receive_cam_str(self,data_str):

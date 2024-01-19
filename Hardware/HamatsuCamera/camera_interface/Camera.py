@@ -8,7 +8,7 @@ import sys
 import os
 import multiprocessing as mp
 
-from PyQt6.QtCore import Qt, pyqtSignal,QThread
+from PyQt6.QtCore import Qt, pyqtSignal,QThread, pyqtSlot as Slot
 from PyQt6.QtGui import QImage
 
 import ffmpeg
@@ -22,6 +22,8 @@ class camera(QThread):
 
     def __init__(self, event, args):
         super().__init__()
+        self.closeEvent = mp.Event()
+
         if Dcamapi.init():
             
             self.dcam = Dcam(0,DCAM_PIXELTYPE.MONO16)
@@ -52,25 +54,32 @@ class camera(QThread):
             self.height, self.width = self.get_Dim()
             self.ch = 1  
             self.bytesPerLine = self.ch*self.width
-            self.print_str.emit("ROI:\nHeight: ", self.height, "\nWidth: ", self.width)
+            self.print_str.emit("ROI:\nHeight: {}\nWidth: {}".format(self.height, self.width))
 
             self.threshold = None
             self.mode = None
+            self.path = args.path
+
         else:
             #self.print_str.emit('-NG: Dcamapi.init() fails with error {}'.format(Dcamapi.lasterr()))
             self.print_str.emit("Check cable and power button!")
             self.print_str.emit("And restart")
-            #Dcamapi.uninit()
-            #exit(0)
+            Dcamapi.uninit()
+            exit(0)
     
-    def InitSettings(self): 
-        
-        self.print_str.emit("Changing readout speed, success: ", self.set_Value(DCAM_IDPROP.READOUTSPEED, DCAMPROP.READOUTSPEED.FASTEST))
-        self.print_str.emit("pixel type B/W 16 bit:", self.set_Value(DCAM_IDPROP.IMAGE_PIXELTYPE, 2))
-        self.print_str.emit("Color type BW success:", self.set_Value(DCAM_IDPROP.COLORTYPE, DCAMPROP.COLORTYPE.BW))
-        self.print_str.emit("Bits per channel 16:", self.set_Value(DCAM_IDPROP.BITSPERCHANNEL, DCAMPROP.BITSPERCHANNEL._16))
-        self.print_str.emit("exposure time set 25s, success: ", self.set_Value(DCAM_IDPROP.EXPOSURETIME, self.exposure), "\nexposure ", self.get_Value(DCAM_IDPROP.EXPOSURETIME) )
-        self.print_str.emit("Setting framerate to 40fps, success:", self.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, self.fps), "\nfps ", self.get_Value(DCAM_IDPROP.INTERNALFRAMERATE))
+    @Slot(int)
+    def close_event(self, value):
+        print("setting the event")
+
+        self.closeEvent.set()
+
+    def InitSettings(self):        
+        self.print_str.emit("Changing readout speed, success: {}".format(self.set_Value(DCAM_IDPROP.READOUTSPEED, DCAMPROP.READOUTSPEED.FASTEST)))
+        self.print_str.emit("pixel type B/W 16 bit:".format(self.set_Value(DCAM_IDPROP.IMAGE_PIXELTYPE, 2)))
+        self.print_str.emit("Color type BW success:".format(self.set_Value(DCAM_IDPROP.COLORTYPE, DCAMPROP.COLORTYPE.BW)))
+        self.print_str.emit("Bits per channel 16:".format(self.set_Value(DCAM_IDPROP.BITSPERCHANNEL, DCAMPROP.BITSPERCHANNEL._16)))
+        self.print_str.emit("exposure time set 25s, success: {}\nexposure {}".format(self.set_Value(DCAM_IDPROP.EXPOSURETIME, self.exposure), self.get_Value(DCAM_IDPROP.EXPOSURETIME)))
+        self.print_str.emit("Setting framerate to 40fps, success: {}\nfps {}".format(self.set_Value(DCAM_IDPROP.INTERNALFRAMERATE, self.fps), self.get_Value(DCAM_IDPROP.INTERNALFRAMERATE)))
         
 
     def camera_saving(self, event_saver, q, path, width, height, ending):
@@ -150,38 +159,49 @@ class camera(QThread):
                 self.print_str.emit('-NG: Dcam.dev_open() fails with error {}'.format(self.dcam.lasterr()))
         else:
             self.print_str.emit('-NG: Dcamapi.init() fails with error {}'.format(Dcamapi.lasterr()))
-
-    def startLive(self, event):
+    
+    def startLive(self):
         self.mode = 0
-        self.allocateBuffer(3)
-        self.liveImage(event)
-        self.dcam.buf_release()
+        
+        #ret = self.allocateBuffer(3)
+        #print("Buffer allocation: ", ret)
 
-    def startZ(self, event, path):
+        #if ret == False:
+        #    self.print_str.emit("cannot allocate memory, delete stuff or contact Arttu :)")
+        #    self.close()
+        #    sys.exit()
+        #else:
+        self.liveImage()
+        self.dcam.buf_release()
+        self.closeEvent.clear()
+
+    def startZ(self):
 
         self.mode = 1
         self.threshold = 1000
         worked = self.allocateBuffer(self.threshold)
+
         if worked == False:
             self.print_str.emit("cannot allocate memory, delete stuff or contact Arttu :)")
             self.close()
             sys.exit()
             
         q = mp.Queue()
-
         save_event = mp.Event()
-        save_thread = mp.Process(target= self.camera_saving, args=(save_event, q, path, self.width, self.height, "scan"))
+        save_thread = mp.Process(target= self.camera_saving, args=(save_event, q, self.path, self.width, self.height, "scan"))
         save_thread.start()
 
-        self.getFrame(q, event)
+        self.getFrame(q)
         
         save_event.set()
         save_thread.join()
+
         save_event.clear()
+        self.closeEvent.clear()
 
         self.dcam.buf_release()
 
-    def start(self, event, path):
+    def start(self):
         self.mode = 2
 
         self.threshold = 3225
@@ -194,19 +214,25 @@ class camera(QThread):
         q = mp.Queue()
 
         save_event = mp.Event()
-        save_thread = mp.Process(target= self.camera_saving, args=(save_event, q, path, self.width, self.height, "main"))
+        save_thread = mp.Process(target= self.camera_saving, args=(save_event, q, self.path, self.width, self.height, "main"))
         save_thread.start()
 
-        self.getFrame(q, event)
+        self.getFrame(q)
         
         save_event.set()
         save_thread.join()
         save_event.clear()
+        self.closeEvent.clear()
+
         self.dcam.buf_release()
     
     def displayframe(self, frame):
-        convertToQtFormat = QImage(frame, self.width, self.height, self.bytesPerLine, QImage.Format.Format_Grayscale8) #
-        self.changePixmap.emit(convertToQtFormat)
+        
+        h, w = frame.shape
+        bytesPerLine = 1 * w
+        convertToQtFormat = QImage(frame,w, h, bytesPerLine, QImage.Format.Format_Grayscale16)
+        #convertToQtFormat = QImage(frame, self.width, self.height, self.bytesPerLine, QImage.Format.Format_Grayscale8) #
+        #self.changePixmap.emit(convertToQtFormat)
         return 1
 
     def eventChecker(self):
@@ -218,17 +244,17 @@ class camera(QThread):
             return 1 if ret & DCAMWAIT_CAPEVENT.FRAMEREADY == DCAMWAIT_CAPEVENT.FRAMEREADY else 2    
         
     
-    def liveImage(self, event):
+    def liveImage(self):
 
         self.cameraStatus = True
         self.dcam.cap_start()
         while self.cameraStatus:
             status = self.eventChecker()
-            if (status==1) & (event.is_set() == False):
+            if (status==1) & (self.closeEvent.is_set() == False):
                 packet = self.dcam.buf_getlastframedata(self.color)
                 iWindowStatus = self.displayframe(packet)
             else:
-                if event.is_set():
+                if self.closeEvent.is_set():
                     break
                 elif status == 2:
                     continue
@@ -241,7 +267,7 @@ class camera(QThread):
                         
         self.dcam.cap_stop()
 
-    def getFrame(self, q, event):
+    def getFrame(self, q):
         self.i = 0 #num_recovered images
         self.cameraStatus = True    
         self.dcam.cap_start(bSequence=False)        
@@ -254,7 +280,7 @@ class camera(QThread):
         while self.cameraStatus:
             status = self.eventChecker()
 
-            if (event.is_set()) | (self.i == self.threshold):
+            if (self.closeEvent.is_set()) | (self.i == self.threshold):
                 self.dcam.cap_stop()
             elif (status==1) &  (self.i < self.threshold): 
                 packet = self.dcam.buf_getframe(self.i,self.color)
@@ -269,7 +295,7 @@ class camera(QThread):
                 # plot           
             elif status==2:
                 # camera stopped
-                if (event.is_set()) | (self.i == self.threshold):
+                if (self.closeEvent.is_set()) | (self.i == self.threshold):
                     self.cameraStatus = False
                     self.dcam.cap_stop()
                     self.print_str.emit("Camera done, recovered", self.i, "images!")
