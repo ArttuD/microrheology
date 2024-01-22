@@ -22,7 +22,9 @@ class App(QWidget):
 
     def __init__(self, args):
         super().__init__()
-
+        self.ctrl = {}
+        self.ctrl['break'] = False
+        
         self.args = args
 
         self.event_cam = threading.Event()
@@ -35,7 +37,7 @@ class App(QWidget):
         self.process_flag = False
 
         #Init driver and signal pipe
-        self.cam = camera(self.event_cam, self.args)
+        self.cam = camera(self.event_cam, self.ctrl, self.args)
         self.cam.changePixmap.connect(self.setImage)
         self.cam.print_str.connect(self.receive_cam_str)
         self.process_signal.connect(self.cam.close_event)
@@ -135,9 +137,6 @@ class App(QWidget):
         """
         Create and connect buttons, sliders, and check box
         """
-
-        #Process
-
         #Start measurement
         self.btnStart = QPushButton("Start measurement")
         self.btnStart.pressed.connect(self.start)
@@ -179,24 +178,13 @@ class App(QWidget):
         Start camera stream
         *** No problems
         """
-        print("Please, brightness and find sample")
-
         self.process_flag = True
         self.streamBtn.setStyleSheet("background-color : white")
-
-        ret = self.cam.allocateBuffer(3)
-
-        print("Allocation", ret)
-        if ret == False:
-            sys.exit(1)
         self.process = QtCore.QThread()
         self.cam.moveToThread(self.process)
 
         self.process.started.connect(self.cam.startLive) 
         self.process.start()
-
-        #self.process = mp.apply_async(target= self.cam.startLive, args=(self.process_event,))
-        #self.process.start()
         
 
 
@@ -204,8 +192,6 @@ class App(QWidget):
         """
         -Autotune - calibration of magnetic sensor
         -Manual - Kalibrate current sensor to match the input
-        ***Problems
-        * Autotune, not tested!
         """
 
         self.createAndCheckFolder(self.textField.toPlainText())
@@ -214,7 +200,6 @@ class App(QWidget):
 
         self.printLabel.setText("Z -stack started")
         self.process_flag = True
-
 
         self.process = QtCore.QThread()
         self.cam.moveToThread(self.process)
@@ -246,31 +231,36 @@ class App(QWidget):
         """
         Stop tuning, measurement or camera stream and reset Gui
         """
-        #print("setting event")
-        #self.process_signal.emit(1)
         self.btnStop.setStyleSheet("background-color : white")
+        print("closing")
         if self.process_flag:
-            self.printLabel.setText("{}".format(self.process.isFinished()))
             if self.process.isFinished() == False:
-                self.process_signal.emit(1)
+                print("emiting!")
+                #self.process_signal.emit(1)
+                self.ctrl['break'] = True
+                while self.ctrl['break']:
+                    print("waiting: ", self.ctrl['break'])
+                    time.sleep(1)
+                self.process.terminate()
                 self.process.wait()
+                #self.process.wait()
+                time.sleep(2)
+                print("Qthread closed, continue")
             else:
-                
                 print("process done")
-            
-            
-            
-            self.set_black_screen()
         else:
             print("nothing running is running")
+
 
         self.streamBtn.setStyleSheet("background-color : green")
         self.stackBtn.setStyleSheet("background-color : green")  
         self.btnStart.setStyleSheet("background-color : green")
         self.btnStop.setStyleSheet("background-color : red")
+        self.ctrl['break'] = False
         self.process_flag = False
 
         self.printLabel.setText("Ready for the new round!\nPlease remember change the path")
+        self.set_black_screen()
     
     def shutDown(self):
         """
@@ -280,17 +270,18 @@ class App(QWidget):
         self.cam.close()
         exit(0)
 
-    @pyqtSlot(QImage)
+    @pyqtSlot(np.ndarray)
     def setImage(self, image):
         """
         Image signal pipe
         """
-        #print(image.shape, image.min(), image.max())
-        #h, w = image.shape
-        #bytesPerLine = 1 * w
-        #convertToQtFormat = QImage(image,w, h, bytesPerLine, QImage.Format.Format_Grayscale8)
-        p = image.scaled(720, 720) #Qt.AspectRatioMode.KeepAspectRatio
-        self.label.setPixmap(QPixmap(QPixmap.fromImage(p)))
+        image = ((image - image.min()) / (image.max() - image.min()) * 255).astype(np.uint8)
+
+        # Create a QImage from the normalized image
+        q_image = QImage(image.data, image.shape[1], image.shape[0], image.shape[1] * 1, QImage.Format.Format_Grayscale8)
+        pixmap = QPixmap.fromImage(q_image)
+        p = pixmap.scaled(720, 720) 
+        self.label.setPixmap(p)
 
     @pyqtSlot(str)
     def receive_cam_str(self,data_str):

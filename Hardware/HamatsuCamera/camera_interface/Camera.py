@@ -17,12 +17,13 @@ from dcamapi4 import DCAMERR, DCAM_PIXELTYPE, DCAM_IDPROP, DCAM_PROP, DCAMPROP
 
 class camera(QThread):
 
-    changePixmap = pyqtSignal(QImage)
+    changePixmap = pyqtSignal(np.ndarray)
     print_str = pyqtSignal(str) #self.print_str.emit(pos)
 
-    def __init__(self, event, args):
+    def __init__(self, event, ctr, args):
         super().__init__()
         self.closeEvent = mp.Event()
+        self.ctrl = ctr
 
         if Dcamapi.init():
             
@@ -70,7 +71,6 @@ class camera(QThread):
     @Slot(int)
     def close_event(self, value):
         print("setting the event")
-
         self.closeEvent.set()
 
     def InitSettings(self):        
@@ -132,11 +132,11 @@ class camera(QThread):
         return int(self.get_Value(DCAM_IDPROP.IMAGE_HEIGHT)),int(self.get_Value(DCAM_IDPROP.IMAGE_WIDTH))
 
     def allocateBuffer(self,size):
-        try:
-            ret = self.dcam.buf_alloc(size)
-            self.print_str.emit("buffer allocation", ret)
+        ret = self.dcam.buf_alloc(size)
+        if ret:
+            self.print_str.emit("buffer allocation {}".format(ret))
             return True
-        except:
+        else:
             self.print_str.emit("Failed to allocate space!")
             return False
 
@@ -163,17 +163,20 @@ class camera(QThread):
     def startLive(self):
         self.mode = 0
         
-        #ret = self.allocateBuffer(3)
+        ret = self.allocateBuffer(3)
         #print("Buffer allocation: ", ret)
 
-        #if ret == False:
-        #    self.print_str.emit("cannot allocate memory, delete stuff or contact Arttu :)")
-        #    self.close()
-        #    sys.exit()
+        if ret == False:
+            self.print_str.emit("cannot allocate memory, delete stuff or contact Arttu :)")
+            self.close()
+            sys.exit(1)
         #else:
-        self.liveImage()
+        _ = self.liveImage()
         self.dcam.buf_release()
         self.closeEvent.clear()
+        print("Closed Everything, returning")
+        self.ctrl['break'] = False
+        return 1
 
     def startZ(self):
 
@@ -228,11 +231,7 @@ class camera(QThread):
     
     def displayframe(self, frame):
         
-        h, w = frame.shape
-        bytesPerLine = 1 * w
-        convertToQtFormat = QImage(frame,w, h, bytesPerLine, QImage.Format.Format_Grayscale16)
-        #convertToQtFormat = QImage(frame, self.width, self.height, self.bytesPerLine, QImage.Format.Format_Grayscale8) #
-        #self.changePixmap.emit(convertToQtFormat)
+        self.changePixmap.emit(frame)
         return 1
 
     def eventChecker(self):
@@ -250,11 +249,13 @@ class camera(QThread):
         self.dcam.cap_start()
         while self.cameraStatus:
             status = self.eventChecker()
-            if (status==1) & (self.closeEvent.is_set() == False):
+            if (status==1) & (self.ctrl['break'] == False):
                 packet = self.dcam.buf_getlastframedata(self.color)
                 iWindowStatus = self.displayframe(packet)
+                print(self.ctrl['break'])
             else:
-                if self.closeEvent.is_set():
+                if self.ctrl['break']:
+                    print("received close command")
                     break
                 elif status == 2:
                     continue
@@ -266,6 +267,7 @@ class camera(QThread):
                         self.print_str.emit('-NG: Dcam.wait_event() fails with error {}'.format(dcamerr))
                         
         self.dcam.cap_stop()
+        return 0
 
     def getFrame(self, q):
         self.i = 0 #num_recovered images
