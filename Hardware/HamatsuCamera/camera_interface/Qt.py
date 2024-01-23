@@ -1,20 +1,57 @@
 from PyQt6 import QtWidgets, QtCore, QtGui
 from PyQt6.QtCore import Qt, pyqtSlot, pyqtSignal
 
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, pyqtSlot as Slot
+from PyQt6.QtGui import QImage
+
+from PyQt6.QtWidgets import QApplication
+
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import QImage, QPixmap
 
 import multiprocessing as mp
 
 import sys
+import argparse
+import sys
 import numpy as np
-import cv2
 import time
-import threading
 import os
-from queue import Queue
-
+import datetime
+import ffmpeg
 from Camera import camera
+
+def camera_saving(event_saver, q, path, width, height, ending):
+
+    print("in creating saver")
+    
+    out_name = os.path.join(path,'measurement_{}_{}.mp4'.format(ending, datetime.date.today()))
+    out_process = ( 
+    ffmpeg 
+    .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'
+    .format(width, height)) 
+    .output(out_name, pix_fmt='yuv420p') .overwrite_output() 
+    .run_async(pipe_stdin=True) 
+    )
+    idx = 0
+    while True:
+        if (q.empty() == False):
+            packet = q.get()
+            packet = (packet/ 255).astype(np.uint8)
+            frame = np.stack((packet,packet,packet), axis = -1)
+            out_process.stdin.write( frame.tobytes() )
+            idx += 1
+        else:
+            if not event_saver.is_set():
+                #self.print_str.emit("waiting")
+                time.sleep(0.01)
+            else:
+                #self.print_str.emit("closing")
+                break
+    
+    print("closing stream, saved ", idx, "images")
+    out_process.stdin.close()
+    out_process.wait()
 
 class App(QWidget):
 
@@ -22,11 +59,17 @@ class App(QWidget):
 
     def __init__(self, args):
         super().__init__()
+
         self.ctrl = {}
         self.ctrl['break'] = False
         self.ctrl['mode'] = None
+
+        self.q = None
+        self.save_event = None
+        self.save_thread = None
         
         self.args = args
+        self.path = args.path
 
         #UI geometry
         self.left = 0; self.top = 0
@@ -43,6 +86,8 @@ class App(QWidget):
         self.process = QtCore.QThread()
         self.cam.moveToThread(self.process)
         self.process.started.connect(self.cam.run) 
+        self.save_thread = None
+        self.imgCounter = 0
 
         #cfg GUI
         self.initUI()
@@ -68,9 +113,7 @@ class App(QWidget):
 
         #4th row: sliders, fields and labels
         self.hlayout = QHBoxLayout()
-
         self.hlabels = QHBoxLayout()
-
         self.accessory = QVBoxLayout()
         
         self.cfg_buttons() #cfg buttons
@@ -82,7 +125,8 @@ class App(QWidget):
 
         #Add final layout and display
         self.win.setLayout(self.vlayout)
-        self.win.show()  
+        self.win.show()
+
 
 
     def cfg_image(self):
@@ -180,6 +224,7 @@ class App(QWidget):
         Start camera stream
         *** No problems
         """
+
         self.process_flag = True
         self.ctrl['mode'] = 1
         self.streamBtn.setStyleSheet("background-color : white")
@@ -209,15 +254,18 @@ class App(QWidget):
             -Fetch path
             -start current driver and camera
         """
-
+        self.process_flag = True
+        self.ctrl['mode'] = 3
         self.createAndCheckFolder(self.textField.toPlainText())
         self.cam.path = self.textField.toPlainText()
 
-        self.stackBtn.setStyleSheet("background-color : white")
-        self.printLabel.setText("Measurement started")
+        self.q = mp.Queue()
+        self.save_event = mp.Event()
+        self.save_thread = mp.Process(target= camera_saving, args=(self.save_event, self.q, self.path, 2048, 2048, "main",))
+        self.save_thread.start()
 
-        self.process_flag = True
-        self.ctrl['mode'] = 3
+        self.btnStart.setStyleSheet("background-color : white")
+        self.printLabel.setText("Measurement started")
 
         self.process.start()
         
@@ -227,18 +275,23 @@ class App(QWidget):
         Stop tuning, measurement or camera stream and reset Gui
         """
         self.btnStop.setStyleSheet("background-color : white")
-        print("closing")
+        self.ctrl['break'] = True
         if self.process_flag:
-            if self.process.isFinished() == False:
-                print("emiting!")
+            if self.ctrl['break']:
                 #self.process_signal.emit(1)
-                self.ctrl['break'] = True
                 while self.ctrl['break']:
                     print("waiting: ", self.ctrl['break'])
                     time.sleep(1)
 
-                #self.process.terminate()
-                #self.process.wait()
+                self.process.terminate()
+                print("Waiting to join")
+                self.process.wait()
+
+                if self.ctrl["mode"] != 1:
+                    self.save_event.set()
+                    print("waiting saving thread")
+                    self.save_thread.join()
+                    self.save_event.clear()
                     
                 time.sleep(2)
                 print("Qthread closed, continue")
@@ -253,7 +306,8 @@ class App(QWidget):
         self.btnStart.setStyleSheet("background-color : green")
         self.btnStop.setStyleSheet("background-color : red")
         
-        self.ctrl['mode'] = None
+        #self.ctrl['mode'] = None
+        self.imgCounter = 0
         self.ctrl['break'] = False
         self.process_flag = False
 
@@ -275,13 +329,22 @@ class App(QWidget):
         """
         Image signal pipe
         """
-        image = ((image - image.min()) / (image.max() - image.min()) * 255).astype(np.uint8)
+        self.imgCounter += 1
+        image = (image/ 255).astype(np.uint8)
 
+        if self.ctrl["mode"] != 1:
+            self.q.put(image)
         # Create a QImage from the normalized image
-        q_image = QImage(image.data, image.shape[1], image.shape[0], image.shape[1] * 1, QImage.Format.Format_Grayscale8)
-        pixmap = QPixmap.fromImage(q_image)
-        p = pixmap.scaled(720, 720) 
-        self.label.setPixmap(p)
+            if self.imgCounter%10:
+                q_image = QImage(image.data, image.shape[1], image.shape[0], image.shape[1] * 1, QImage.Format.Format_Grayscale8)
+                pixmap = QPixmap.fromImage(q_image)
+                p = pixmap.scaled(720, 720) 
+                self.label.setPixmap(p)
+        else:
+            q_image = QImage(image.data, image.shape[1], image.shape[0], image.shape[1] * 1, QImage.Format.Format_Grayscale8)
+            pixmap = QPixmap.fromImage(q_image)
+            p = pixmap.scaled(720, 720) 
+            self.label.setPixmap(p)
 
     @pyqtSlot(str)
     def receive_cam_str(self,data_str):
@@ -291,11 +354,19 @@ class App(QWidget):
         self.printLabel.setText(data_str)
 
 
-def pymain(args):
-    app = QtWidgets.QApplication(sys.argv)
-    w = App(args)
-    sys.exit(app.exec())
+#def pymain(args):
+#    app = QtWidgets.QApplication(sys.argv)
+#    w = App(args)
+#    sys.exit(app.exec())
 
 if __name__ == "__main__":
-    pymain()
+    argParser = argparse.ArgumentParser()
+    argParser.add_argument("-p", "--path", help="path and name of output video")
+    argParser.add_argument("-s", "--no_stack", help="If you dont want to record and check exposure", action = "store_true")
+
+    args = argParser.parse_args()
+
+    app = QApplication(sys.argv)
+    ex = App(args)
+    sys.exit(app.exec())
 
