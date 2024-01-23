@@ -20,9 +20,8 @@ class camera(QThread):
     changePixmap = pyqtSignal(np.ndarray)
     print_str = pyqtSignal(str) #self.print_str.emit(pos)
 
-    def __init__(self, event, ctr, args):
+    def __init__(self, ctr, args):
         super().__init__()
-        self.closeEvent = mp.Event()
         self.ctrl = ctr
 
         if Dcamapi.init():
@@ -67,11 +66,15 @@ class camera(QThread):
             self.print_str.emit("And restart")
             Dcamapi.uninit()
             exit(0)
-    
-    @Slot(int)
-    def close_event(self, value):
-        print("setting the event")
-        self.closeEvent.set()
+
+    def run(self):
+        value = self.ctrl["mode"]
+        if value == 1:
+            _ = self.startLive()
+        elif value == 2:
+            _ = self.startZ()
+        elif value == 3:
+            _ = self.start()
 
     def InitSettings(self):        
         self.print_str.emit("Changing readout speed, success: {}".format(self.set_Value(DCAM_IDPROP.READOUTSPEED, DCAMPROP.READOUTSPEED.FASTEST)))
@@ -173,7 +176,6 @@ class camera(QThread):
         #else:
         _ = self.liveImage()
         self.dcam.buf_release()
-        self.closeEvent.clear()
         print("Closed Everything, returning")
         self.ctrl['break'] = False
         return 1
@@ -200,7 +202,6 @@ class camera(QThread):
         save_thread.join()
 
         save_event.clear()
-        self.closeEvent.clear()
 
         self.dcam.buf_release()
 
@@ -225,7 +226,6 @@ class camera(QThread):
         save_event.set()
         save_thread.join()
         save_event.clear()
-        self.closeEvent.clear()
 
         self.dcam.buf_release()
     
@@ -252,7 +252,7 @@ class camera(QThread):
             if (status==1) & (self.ctrl['break'] == False):
                 packet = self.dcam.buf_getlastframedata(self.color)
                 iWindowStatus = self.displayframe(packet)
-                print(self.ctrl['break'])
+                
             else:
                 if self.ctrl['break']:
                     print("received close command")
@@ -282,7 +282,7 @@ class camera(QThread):
         while self.cameraStatus:
             status = self.eventChecker()
 
-            if (self.closeEvent.is_set()) | (self.i == self.threshold):
+            if (self.ctrl['break'] == False) | (self.i == self.threshold):
                 self.dcam.cap_stop()
             elif (status==1) &  (self.i < self.threshold): 
                 packet = self.dcam.buf_getframe(self.i,self.color)
@@ -297,7 +297,7 @@ class camera(QThread):
                 # plot           
             elif status==2:
                 # camera stopped
-                if (self.closeEvent.is_set()) | (self.i == self.threshold):
+                if (self.ctrl['break'] == False) | (self.i == self.threshold):
                     self.cameraStatus = False
                     self.dcam.cap_stop()
                     self.print_str.emit("Camera done, recovered", self.i, "images!")

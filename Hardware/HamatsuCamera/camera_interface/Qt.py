@@ -24,10 +24,9 @@ class App(QWidget):
         super().__init__()
         self.ctrl = {}
         self.ctrl['break'] = False
+        self.ctrl['mode'] = None
         
         self.args = args
-
-        self.event_cam = threading.Event()
 
         #UI geometry
         self.left = 0; self.top = 0
@@ -37,10 +36,13 @@ class App(QWidget):
         self.process_flag = False
 
         #Init driver and signal pipe
-        self.cam = camera(self.event_cam, self.ctrl, self.args)
+        self.cam = camera(self.ctrl, self.args)
         self.cam.changePixmap.connect(self.setImage)
         self.cam.print_str.connect(self.receive_cam_str)
-        self.process_signal.connect(self.cam.close_event)
+
+        self.process = QtCore.QThread()
+        self.cam.moveToThread(self.process)
+        self.process.started.connect(self.cam.run) 
 
         #cfg GUI
         self.initUI()
@@ -179,11 +181,8 @@ class App(QWidget):
         *** No problems
         """
         self.process_flag = True
+        self.ctrl['mode'] = 1
         self.streamBtn.setStyleSheet("background-color : white")
-        self.process = QtCore.QThread()
-        self.cam.moveToThread(self.process)
-
-        self.process.started.connect(self.cam.startLive) 
         self.process.start()
         
 
@@ -200,10 +199,8 @@ class App(QWidget):
 
         self.printLabel.setText("Z -stack started")
         self.process_flag = True
+        self.ctrl['mode'] = 2
 
-        self.process = QtCore.QThread()
-        self.cam.moveToThread(self.process)
-        self.process.started.connect(self.cam.startZ) 
         self.process.start()
 
     def start(self):
@@ -220,10 +217,8 @@ class App(QWidget):
         self.printLabel.setText("Measurement started")
 
         self.process_flag = True
+        self.ctrl['mode'] = 3
 
-        self.process = QtCore.QThread()
-        self.cam.moveToThread(self.process)
-        self.process.started.connect(self.cam.start) 
         self.process.start()
         
 
@@ -241,9 +236,10 @@ class App(QWidget):
                 while self.ctrl['break']:
                     print("waiting: ", self.ctrl['break'])
                     time.sleep(1)
-                self.process.terminate()
-                self.process.wait()
+
+                #self.process.terminate()
                 #self.process.wait()
+                    
                 time.sleep(2)
                 print("Qthread closed, continue")
             else:
@@ -256,6 +252,8 @@ class App(QWidget):
         self.stackBtn.setStyleSheet("background-color : green")  
         self.btnStart.setStyleSheet("background-color : green")
         self.btnStop.setStyleSheet("background-color : red")
+        
+        self.ctrl['mode'] = None
         self.ctrl['break'] = False
         self.process_flag = False
 
@@ -267,6 +265,8 @@ class App(QWidget):
         Close all
         """
         self.printLabel.setText("Shutting down")
+        self.process.quit()
+        self.process.wait()
         self.cam.close()
         exit(0)
 
