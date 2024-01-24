@@ -1,76 +1,53 @@
 import sys
-import cv2 
 import numpy as np
 import datetime
 import time
-import argparse
 import sys
 import os
 import multiprocessing as mp
 
 from PyQt6.QtCore import Qt, pyqtSignal,QThread, pyqtSlot as Slot
-from PyQt6.QtGui import QImage
 
 
 from dcam import *
 from dcamapi4 import DCAMERR, DCAM_PIXELTYPE, DCAM_IDPROP, DCAM_PROP, DCAMPROP
 
 
-#class saverTest:
-#    def __init__(self):
-#        print("saver init")
-#        pass
-
 class camera(QThread):
 
-    changePixmap = pyqtSignal(np.ndarray)
-    print_str = pyqtSignal(str) #self.print_str.emit(pos)
+    changePixmap = pyqtSignal(np.ndarray) #Image
+    print_str = pyqtSignal(str) #Image
     
 
     def __init__(self, ctr, args):
         super().__init__()
+
         self.ctrl = ctr
+        self.path = args.path
 
         if Dcamapi.init():
             
             self.dcam = Dcam(0,DCAM_PIXELTYPE.MONO16)
             self.dcam.dev_open()
-            isExist = os.path.exists(args.path)
-            
-            if not isExist:
-                # Create a new directory because it does not exist
-                self.print_str.emit("Creating folder", args.path)
-                os.makedirs(args.path)
             
             self.timeout = 1000
-            self.data = None
             self.color = DCAM_PIXELTYPE.MONO16 #Only option for Spark
 
-            self.closeFlag = False
-            self.out_process = None
-            self.path = args.path
             self.outName = os.path.join(args.path,"recording.avi")
             self.outNameScan = os.path.join(args.path,"recording_scan.avi")
 
-            self.timesteps = np.stack((0,0), axis = -1)
-            self.exposure = 25e-3#25e-3
+            self.exposure = 25e-3
             self.fps = 40
 
-            self.InitSettings()
-
             self.height, self.width = self.get_Dim()
-            self.ch = 1  
-            self.bytesPerLine = self.ch*self.width
-            self.print_str.emit("ROI:\nHeight: {}\nWidth: {}".format(self.height, self.width))
 
             self.threshold = None
             self.mode = None
-            self.path = args.path
+
+            self.InitSettings()
 
         else:
-            #self.print_str.emit('-NG: Dcamapi.init() fails with error {}'.format(Dcamapi.lasterr()))
-            print("Check cable and power button!")
-            print("And restart")
+            print("Check cable and power button!\nAnd restart")
             Dcamapi.uninit()
             exit(1)
 
@@ -86,7 +63,9 @@ class camera(QThread):
             _ = self.start()
 
         self.print_str.emit("Closed Everything, please press stop to reset")
+
         while self.ctrl["break"] == False:
+            #Waiting until stop is pressed
             time.sleep(1)
 
         self.ctrl['break'] = False
@@ -147,12 +126,10 @@ class camera(QThread):
 
         if ret == False:
             self.print_str.emit("cannot allocate memory, delete stuff or contact Arttu :)")
-            self.close()
-            sys.exit(1)
+            return 0
         
         _ = self.liveImage()
         self.dcam.buf_release()
-        self.ctrl['break'] = False
         
         return 1
 
@@ -161,47 +138,25 @@ class camera(QThread):
         self.mode = 1
         self.threshold = 1000
         worked = self.allocateBuffer(self.threshold)
-        saver = saverTest()
 
         if worked == False:
             self.print_str.emit("cannot allocate memory, delete stuff or contact Arttu :)")
-            self.close()
-            self.ctrl["break"] = False
-            return 1
+            return 0
             
-        q = mp.Queue()
-        save_event = mp.Event()
-        save_thread = mp.Process(target= saver.camera_saving, args=(save_event, q, self.path, self.width, self.height, "scan"))
-        save_thread.start()
-        print("started saving thread")
-        self.getFrame(q)
-        
-        save_event.set()
-        print("waiting saving thread")
-        save_thread.join()
-        save_event.clear()
-
+        self.getFrame()
         self.dcam.buf_release()
-
-        print("Closed Everything, returning")
-        save = None
-        self.ctrl['break'] = False
 
         return 1
 
     def start(self):
+        
         self.mode = 2
-        self.threshold = 1000#3225
-        #save = saverTest()
+        self.threshold = 1000#3225 Change this
         worked = self.allocateBuffer(self.threshold)
-
-        print("worked", worked)
 
         if worked == False:
             self.print_str.emit("cannot allocate memory, delete stuff or contact Arttu :)")
-            self.close()
-            self.ctrl["break"] = False
-            return 1
+            return 0
 
         self.getFrame()
         self.dcam.buf_release()
@@ -231,10 +186,8 @@ class camera(QThread):
             if (status==1) & (self.ctrl['break'] == False):
                 packet = self.dcam.buf_getlastframedata(self.color)
                 iWindowStatus = self.displayframe(packet)
-                
             else:
                 if self.ctrl['break']:
-                    print("received close command")
                     break
                 elif status == 2:
                     continue
@@ -258,42 +211,44 @@ class camera(QThread):
             self.print_str.emit("Aqcuiring {} frames".format( self.threshold))
             f = open(os.path.join(self.path,'measurement_{}.csv'.format(datetime.date.today())),'w')
             f.write('index, mSec, uSec\n')
-        else:
-            self.print_str.emit("Aqcuiring {} frames".format( self.threshold))
+        elif self.mode == 1:
+            self.print_str.emit("Aqcuiring {} frames".format(self.threshold))
        
-        print("In imaging loop",  self.cameraStatus)
         while self.cameraStatus:
             status = self.eventChecker()
+
             if (self.ctrl['break'] == True) | (self.i == self.threshold):
-                print("checking for closing")
+                #Stop if break command or threshold is reacjed
                 self.dcam.cap_stop()
                 self.cameraStatus = False
-            elif (status==1) &  (self.i < self.threshold): 
+
+            elif (status==1) & (self.i < self.threshold): 
                 packet = self.dcam.buf_getframe(self.i,self.color)
+                
                 if type(packet) == bool:
-                    self.cameraStatus = False
+                    #if fails to revocer buffer stop
                     self.dcam.cap_stop()
-                    self.print_str.emit("Failed to recover image, closing after {} images!".format(self.i))
-                    print("Failed to recover image, closing after {} images!".format(self.i))
+                    self.cameraStatus = False
+    
+                iWindowStatus = self.displayframe(packet[1])
+                self.i += 1
                 
                 if self.mode == 2:
                     f.write('{},{},{}\n'.format(self.i ,packet[0].timestamp.sec, packet[0].timestamp.microsec))
-                
-                iWindowStatus = self.displayframe(packet[1])
-                self.i += 1                
-                # plot           
+
             elif status==2:
+
                 # camera stopped
                 if (self.ctrl['break'] == True) | (self.i == self.threshold):
+
                     self.cameraStatus = False
                     self.dcam.cap_stop()
-                    self.print_str.emit("Camera done, recovered images!".format(self.i))
                     
             else:
-                self.print_str.emit("No events, {}, Something fishy going on {}".format(status,self.dcam.lasterr())) 
+                #print("No events, {}, Something fishy going on {}".format(status,self.dcam.lasterr())) 
+
                 self.dcam.cap_stop()
                 self.cameraStatus = False
-                self.print_str.emit("Camera done, recovered images {}!".format(self.i))
                 
 
         if self.mode == 2:

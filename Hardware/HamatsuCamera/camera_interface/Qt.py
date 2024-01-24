@@ -23,9 +23,8 @@ from Camera import camera
 
 def camera_saving(event_saver, q, path, width, height, ending):
 
-    print("in creating saver")
-    
     out_name = os.path.join(path,'measurement_{}_{}.mp4'.format(ending, datetime.date.today()))
+
     out_process = ( 
     ffmpeg 
     .input('pipe:', format='rawvideo', pix_fmt='rgb24', s='{}x{}'
@@ -37,16 +36,13 @@ def camera_saving(event_saver, q, path, width, height, ending):
     while True:
         if (q.empty() == False):
             packet = q.get()
-            packet = (packet/ 255).astype(np.uint8)
             frame = np.stack((packet,packet,packet), axis = -1)
             out_process.stdin.write( frame.tobytes() )
             idx += 1
         else:
             if not event_saver.is_set():
-                #self.print_str.emit("waiting")
                 time.sleep(0.01)
             else:
-                #self.print_str.emit("closing")
                 break
     
     print("closing stream, saved ", idx, "images")
@@ -60,10 +56,12 @@ class App(QWidget):
     def __init__(self, args):
         super().__init__()
 
+        #Control threads
         self.ctrl = {}
         self.ctrl['break'] = False
         self.ctrl['mode'] = None
 
+        #Saving
         self.q = None
         self.save_event = None
         self.save_thread = None
@@ -73,7 +71,7 @@ class App(QWidget):
 
         #UI geometry
         self.left = 0; self.top = 0
-        self.width = 900; self.height = 900
+        self.width = 825; self.height = 875
 
         #Flags
         self.process_flag = False
@@ -83,10 +81,11 @@ class App(QWidget):
         self.cam.changePixmap.connect(self.setImage)
         self.cam.print_str.connect(self.receive_cam_str)
 
+
         self.process = QtCore.QThread()
         self.cam.moveToThread(self.process)
         self.process.started.connect(self.cam.run) 
-        self.save_thread = None
+
         self.imgCounter = 0
 
         #cfg GUI
@@ -99,7 +98,6 @@ class App(QWidget):
         
         self.win = QWidget()
         self.styles = {"color": "#f00", "font-size": "20px"}
-
         self.win.resize(self.width,self.height)
         
         #Main layout
@@ -120,7 +118,6 @@ class App(QWidget):
 
         #2nd row: field path 
         self.textLabel()
-
         self.cfg_image() #set label
 
         #Add final layout and display
@@ -130,13 +127,11 @@ class App(QWidget):
 
 
     def cfg_image(self):
-
         """
         Create label, add accesories and label to layout
         """
 
         self.label = QLabel(self)
-        #self.label.resize(480, 480)
         self.set_black_screen()
 
         self.hlabels.addWidget(self.label)#QtCore.Qt.AlignmentFlag.AlignCenter
@@ -222,40 +217,29 @@ class App(QWidget):
     def livestream(self):
         """
         Start camera stream
-        *** No problems
+        No problems
         """
+
+        self.streamBtn.setStyleSheet("background-color : white")
 
         self.process_flag = True
         self.ctrl['mode'] = 1
-        self.streamBtn.setStyleSheet("background-color : white")
         self.process.start()
         
 
 
     def z_stack(self):
+
         """
-        -Autotune - calibration of magnetic sensor
-        -Manual - Kalibrate current sensor to match the input
+        Autotune - calibration of magnetic sensor
+        Manual - Kalibrate current sensor to match the input
         """
 
-        self.createAndCheckFolder(self.textField.toPlainText())
-        self.cam.path = self.textField.toPlainText()
         self.stackBtn.setStyleSheet("background-color : white")
 
-        self.printLabel.setText("Z -stack started")
-        self.process_flag = True
         self.ctrl['mode'] = 2
-
-        self.process.start()
-
-    def start(self):
-        """
-        Start measurement
-            -Fetch path
-            -start current driver and camera
-        """
         self.process_flag = True
-        self.ctrl['mode'] = 3
+
         self.createAndCheckFolder(self.textField.toPlainText())
         self.cam.path = self.textField.toPlainText()
 
@@ -264,60 +248,84 @@ class App(QWidget):
         self.save_thread = mp.Process(target= camera_saving, args=(self.save_event, self.q, self.path, 2048, 2048, "main",))
         self.save_thread.start()
 
-        self.btnStart.setStyleSheet("background-color : white")
-        self.printLabel.setText("Measurement started")
+        self.printLabel.setText("Z -stack started")
+        self.process.start()
 
+    def start(self):
+
+        """
+        Start measurement
+            -Fetch path
+            -start current driver and camera
+        """
+
+        self.btnStart.setStyleSheet("background-color : white")
+
+        self.ctrl['mode'] = 3
+        self.process_flag = True
+
+        self.createAndCheckFolder(self.textField.toPlainText())
+        self.cam.path = self.textField.toPlainText()
+
+        self.q = mp.Queue()
+        self.save_event = mp.Event()
+        self.save_thread = mp.Process(target= camera_saving, args=(self.save_event, self.q, self.path, 2048, 2048, "main",))
+        self.save_thread.start()
+
+        self.printLabel.setText("Measurement started")
         self.process.start()
         
 
     def stop(self):
+
         """
         Stop tuning, measurement or camera stream and reset Gui
         """
+
         self.btnStop.setStyleSheet("background-color : white")
-        self.ctrl['break'] = True
+        self.printLabel.setText("Closing, wait")
+
         if self.process_flag:
+
+            self.ctrl['break'] = True
+
             if self.ctrl['break']:
-                #self.process_signal.emit(1)
+
                 while self.ctrl['break']:
-                    print("waiting: ", self.ctrl['break'])
                     time.sleep(1)
 
                 self.process.terminate()
-                print("Waiting to join")
                 self.process.wait()
 
+                time.sleep(2)
+
                 if self.ctrl["mode"] != 1:
+                    self.printLabel.setText("Waiting saving thread")
                     self.save_event.set()
-                    print("waiting saving thread")
                     self.save_thread.join()
                     self.save_event.clear()
-                    
-                time.sleep(2)
-                print("Qthread closed, continue")
-            else:
-                print("process done")
         else:
-            print("nothing running is running")
-
+            self.printLabel.setText("Nothing is running")
 
         self.streamBtn.setStyleSheet("background-color : green")
         self.stackBtn.setStyleSheet("background-color : green")  
         self.btnStart.setStyleSheet("background-color : green")
         self.btnStop.setStyleSheet("background-color : red")
         
-        #self.ctrl['mode'] = None
         self.imgCounter = 0
         self.ctrl['break'] = False
         self.process_flag = False
 
-        self.printLabel.setText("Ready for the new round!\nPlease remember change the path")
         self.set_black_screen()
+
+        self.printLabel.setText("Ready for the new round!\nPlease remember change the path")
     
     def shutDown(self):
+
         """
         Close all
         """
+
         self.printLabel.setText("Shutting down")
         self.process.quit()
         self.process.wait()
@@ -329,13 +337,15 @@ class App(QWidget):
         """
         Image signal pipe
         """
+
         self.imgCounter += 1
         image = (image/ 255).astype(np.uint8)
 
         if self.ctrl["mode"] != 1:
             self.q.put(image)
-        # Create a QImage from the normalized image
-            if self.imgCounter%10:
+
+            # Create a QImage from the normalized image
+            if self.imgCounter%5:
                 q_image = QImage(image.data, image.shape[1], image.shape[0], image.shape[1] * 1, QImage.Format.Format_Grayscale8)
                 pixmap = QPixmap.fromImage(q_image)
                 p = pixmap.scaled(720, 720) 
