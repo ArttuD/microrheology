@@ -56,6 +56,8 @@ parser.add_argument('--manual','-m',help='Manually remove poor tracks',
                     action="store_true")
 parser.add_argument('--timelapse',help='Change sinusoid timestamps',
                     action="store_true")
+parser.add_argument('--turku',help='Change sinusoid timestamps',
+                    action="store_true")
 parser.add_argument('-d', '--debug',
                     help="Print lots of debugging statements",
                     action="store_const", dest="loglevel",
@@ -75,6 +77,8 @@ particle_size =  args.particle_size
 flip = 1. if args.flip else -1.
 manual = args.manual
 timelapse = args.timelapse
+turku = args.turku
+
 
 m = float(config['PIXELS'][zoom])
 F_V = float(config['BEADS'][particle_size])
@@ -229,8 +233,10 @@ for fold_names in tqdm(glob('{}/2*'.format(path))):
     
     # shifted time indices
     # currently hardcoded based on current sequence
-    s_time = 20 if timelapse else 40
-    e_time = 50 if timelapse else 70
+    s_time = 20 if timelapse else 15 if turku else 40
+    e_time = 50 if timelapse else 45 if turku else 70
+    # s_time =  15 #Turku
+    # e_time =  45 #Turku
     c_start = np.where(current.values[:,-1]>s_time)[0][0]
     c_end = np.where(current.values[:,-1]<e_time)[0][-1]
     
